@@ -15,6 +15,8 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
       navigate('/penghapusan');
     } else if (moduleId === 'dsp02') {
       navigate('/pemusnahan');
+    } else if (moduleId === 'ho01') {
+      navigate('/bast-barang');
     } else {
       handleOpenModule(moduleId);
     }
