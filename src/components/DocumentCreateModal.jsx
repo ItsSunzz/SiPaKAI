@@ -296,7 +296,7 @@ export default function DocumentCreateModal({ type, currentUser, onClose, onSucc
                     <option value="">-- Pilih --</option>
                     {approvers.map((appr) => (
                       <option key={appr.id} value={appr.id}>
-                        {appr.name || appr.nama} ({typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || '-')})
+                        {appr.name || appr.nama} ({(typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || '-'})
                       </option>
                     ))}
                   </select>
@@ -315,7 +315,7 @@ export default function DocumentCreateModal({ type, currentUser, onClose, onSucc
                     <option value="">-- Pilih --</option>
                     {approvers.map((appr) => (
                       <option key={appr.id} value={appr.id}>
-                        {appr.name || appr.nama} ({typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || '-')})
+                        {appr.name || appr.nama} ({(typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || '-'})
                       </option>
                     ))}
                   </select>
@@ -334,7 +334,7 @@ export default function DocumentCreateModal({ type, currentUser, onClose, onSucc
                     <option value="">-- Pilih --</option>
                     {approvers.map((appr) => (
                       <option key={appr.id} value={appr.id}>
-                        {appr.name || appr.nama} ({typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || '-')})
+                        {appr.name || appr.nama} ({(typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || '-'})
                       </option>
                     ))}
                   </select>
