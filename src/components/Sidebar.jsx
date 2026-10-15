@@ -123,34 +123,48 @@ export default function Sidebar({ activeMenu, onSelectMenu, currentRole }) {
               <button
                 type="button"
                 onClick={() => setOpenBast(!openBast)}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/70 hover:text-white transition-colors"
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeMenu.startsWith('ho') || activeMenu.includes('bast')
+                    ? 'bg-[#f05a22] text-white shadow-xs'
+                    : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <FileCheck2 className="w-4 h-4" />
                   <span>Serah Terima (BAST)</span>
                 </div>
-                {openBast ? (
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                {openBast || activeMenu.startsWith('ho') || activeMenu.includes('bast') ? (
+                  <ChevronDown className="w-4 h-4 text-white/80" />
                 ) : (
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 )}
               </button>
 
-              {openBast && (
-                <div className="pl-9 pr-2 py-1 space-y-1 text-xs">
+              {(openBast || activeMenu.startsWith('ho') || activeMenu.includes('bast')) && (
+                <div className="pl-6 pr-2 py-1.5 space-y-1 text-xs">
                   <button
                     type="button"
                     onClick={() => onSelectMenu('ho01')}
-                    className="w-full text-left py-1.5 px-2 rounded text-slate-400 hover:text-white hover:bg-slate-800/50"
+                    className={`w-full flex items-center gap-2 text-left py-1.5 px-2.5 rounded-md transition-colors ${
+                      activeMenu === 'ho01' || activeMenu === 'bast-barang'
+                        ? 'text-white font-semibold bg-slate-800/80'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`}
                   >
-                    BAST Barang (HO-01)
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'ho01' || activeMenu === 'bast-barang' ? 'bg-[#f05a22]' : 'bg-slate-500'}`}></span>
+                    BAST Barang/Fisik
                   </button>
                   <button
                     type="button"
                     onClick={() => onSelectMenu('ho02')}
-                    className="w-full text-left py-1.5 px-2 rounded text-slate-400 hover:text-white hover:bg-slate-800/50"
+                    className={`w-full flex items-center gap-2 text-left py-1.5 px-2.5 rounded-md transition-colors ${
+                      activeMenu === 'ho02'
+                        ? 'text-white font-semibold bg-slate-800/80'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`}
                   >
-                    BAST User Aplikasi (HO-02)
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeMenu === 'ho02' ? 'bg-[#f05a22]' : 'bg-slate-500'}`}></span>
+                    BAST User/Aplikasi
                   </button>
                 </div>
               )}

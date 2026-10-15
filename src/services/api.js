@@ -205,4 +205,27 @@ export const api = {
       method: 'DELETE',
     })
   },
+
+  // Master Data Aset TI
+  async getAssets(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/assets${query ? `?${query}` : ''}`)
+  },
+
+  async getAsset(id) {
+    return request(`/assets/${id}`)
+  },
+
+  // Master Data Jabatan & Posisi
+  async getPositions() {
+    return request('/positions')
+  },
+
+  // Dokumen: Submit / Pengesahan
+  async submitDocument(id, payload = {}) {
+    return request(`/documents/${id}/submit`, {
+      method: 'POST',
+      body: payload,
+    })
+  },
 }

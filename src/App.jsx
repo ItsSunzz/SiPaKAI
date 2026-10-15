@@ -7,6 +7,7 @@ import PemusnahanFormPage from './pages/PemusnahanFormPage'
 import PenghapusanFormPage from './pages/PenghapusanFormPage'
 import PemusnahanReviewPage from './pages/PemusnahanReviewPage'
 import PengaturanPage from './pages/PengaturanPage'
+import BastBarangFormPage from './pages/BastBarangFormPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -221,6 +222,8 @@ export default function App() {
           <Route path="pemusnahan/create" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="penghapusan" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="bast-barang" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast/barang" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

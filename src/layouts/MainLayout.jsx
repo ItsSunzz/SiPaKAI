@@ -12,6 +12,8 @@ export default function MainLayout({ user, onLogout }) {
     if (location.pathname.startsWith('/pengaturan')) return 'pengaturan';
     if (location.pathname.startsWith('/penghapusan')) return 'dsp03';
     if (location.pathname.startsWith('/pemusnahan')) return 'dsp01';
+    if (location.pathname.startsWith('/bast-barang') || location.pathname.startsWith('/bast/barang')) return 'ho01';
+    if (location.pathname.startsWith('/bast-aplikasi') || location.pathname.startsWith('/bast/aplikasi')) return 'ho02';
     if (location.pathname === '/') return 'beranda';
     return '';
   };
@@ -21,6 +23,7 @@ export default function MainLayout({ user, onLogout }) {
     else if (menu === 'dsp01') navigate('/pemusnahan');
     else if (menu === 'dsp03') navigate('/penghapusan');
     else if (menu === 'dsp02') navigate('/pemusnahan');
+    else if (menu === 'ho01' || menu === 'bast-barang') navigate('/bast-barang');
     else if (menu === 'pengaturan') navigate('/pengaturan');
     else alert('Menu ini belum diimplementasikan di versi routing baru.');
   };
