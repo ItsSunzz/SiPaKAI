@@ -81,7 +81,15 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
     loadData();
   }, [doc]);
 
+  useEffect(() => {
+    if (doc?.id && (doc.type === 'ho01' || doc.type === 'ho02' || doc.category_type === 'bast')) {
+      onClose();
+      window.location.href = `/bast-barang/${doc.id}`;
+    }
+  }, [doc, onClose]);
+
   if (!doc) return null;
+  if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') return null;
 
   const activeDoc = docDetail || doc;
   const isPending = activeDoc.status === 'in_review';
@@ -242,7 +250,7 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
 
           {/* Section 3: Riwayat Alur Persetujuan Sekuensial Berjenjang */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 hidden">
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                 <Clock className="w-4 h-4 text-blue-600" />
                 Alur Persetujuan Berjenjang (Sekuensial 1 ➔ 2 ➔ 3)

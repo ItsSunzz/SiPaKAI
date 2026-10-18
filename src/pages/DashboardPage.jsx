@@ -25,6 +25,8 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
   const onReview = (doc) => {
     if (doc?.type?.startsWith('dsp') || doc?.category_type === 'pemusnahan') {
       navigate(`/pemusnahan/${doc.id}/review`);
+    } else if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+      navigate(`/bast-barang/${doc.id}`);
     } else if (handleReviewDocument) {
       handleReviewDocument(doc);
     }
@@ -33,6 +35,8 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
   const onView = (doc) => {
     if (doc?.type?.startsWith('dsp') || doc?.category_type === 'pemusnahan') {
       navigate(`/pemusnahan/${doc.id}/review`);
+    } else if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+      navigate(`/bast-barang/${doc.id}`);
     } else if (handleViewDocument) {
       handleViewDocument(doc);
     }
