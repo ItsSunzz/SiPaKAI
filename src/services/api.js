@@ -228,4 +228,12 @@ export const api = {
       body: payload,
     })
   },
+
+  // BAST: Tanda Tangan Pihak Kedua
+  async signDocument(id, signaturePin) {
+    return request(`/documents/${id}/sign`, {
+      method: 'POST',
+      body: { signature_pin: signaturePin },
+    })
+  },
 }

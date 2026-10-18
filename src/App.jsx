@@ -7,7 +7,9 @@ import PemusnahanFormPage from './pages/PemusnahanFormPage'
 import PenghapusanFormPage from './pages/PenghapusanFormPage'
 import PemusnahanReviewPage from './pages/PemusnahanReviewPage'
 import PengaturanPage from './pages/PengaturanPage'
+import BastBarangListPage from './pages/BastBarangListPage'
 import BastBarangFormPage from './pages/BastBarangFormPage'
+import BastPreviewPage from './pages/BastPreviewPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -151,10 +153,18 @@ export default function App() {
   }
 
   const handleReviewDocument = (doc) => {
+    if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+      window.location.href = `/bast-barang/${doc.id}`;
+      return;
+    }
     setSelectedReviewDoc(doc)
   }
 
   const handleViewDocument = (doc) => {
+    if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+      window.location.href = `/bast-barang/${doc.id}`;
+      return;
+    }
     setSelectedDetailDocId(doc.id)
   }
 
@@ -222,8 +232,13 @@ export default function App() {
           <Route path="pemusnahan/create" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="penghapusan" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
-          <Route path="bast-barang" element={<BastBarangFormPage user={userProfile} />} />
-          <Route path="bast/barang" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />
+          <Route path="bast-barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast-barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast-barang/:id/review" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast/barang" element={<BastBarangListPage user={userProfile} />} />
+          <Route path="bast/barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

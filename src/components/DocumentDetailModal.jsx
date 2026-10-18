@@ -36,13 +36,21 @@ export default function DocumentDetailModal({ docId, onClose, onReview, user }) 
           setError(err.message || 'Gagal mengambil rincian dokumen.')
         }
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-    if (docId) loadDetail()
-  }, [docId])
+    if (docId) loadDetail();
+  }, [docId]);
 
-  if (!docId) return null
+  useEffect(() => {
+    if (doc?.id && (doc.type === 'ho01' || doc.type === 'ho02' || doc.category_type === 'bast')) {
+      onClose();
+      window.location.href = `/bast-barang/${doc.id}`;
+    }
+  }, [doc, onClose]);
+
+  if (!docId) return null;
+  if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') return null;
 
   const handleDownloadPdf = () => {
     const pdfUrl = api.getDocumentPdfUrl(docId)
