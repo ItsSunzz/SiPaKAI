@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Laptop,
   Monitor,
@@ -26,76 +26,15 @@ import {
   Eraser,
   KeyRound,
   Send,
-  Info
+  Info,
+  Edit3,
+  FileEdit,
+  Upload,
+  Image
 } from 'lucide-react';
 import { api } from '../services/api';
-
-// Master pegawai KAI lengkap dengan user_id untuk penandatangan kedua
-const MASTER_PEGAWAI = [
-  {
-    id: 25,
-    nipp: 'P002',
-    nama: 'Andi Wijaya',
-    jabatan: 'Staff',
-    tempat_kedudukan: 'Yogyakarta',
-    personal_area: 'PA02',
-    unit: 'Unit Teknologi Informasi'
-  },
-  {
-    id: 12,
-    nipp: 'P001',
-    nama: 'Budi Santoso',
-    jabatan: 'Manager',
-    tempat_kedudukan: 'Yogyakarta',
-    personal_area: 'PA01',
-    unit: 'Unit Teknologi Informasi'
-  },
-  {
-    id: 18,
-    nipp: '67891',
-    nama: 'Rian Ardiansyah, S.T',
-    jabatan: 'Junior Analyst Operasi Perjalanan KA',
-    tempat_kedudukan: 'Daop 6 Yogyakarta',
-    personal_area: 'PA02',
-    unit: 'Pusat Pengendalian Operasi KA (Pusdalop)'
-  },
-  {
-    id: 21,
-    nipp: '51204',
-    nama: 'Heru Wicaksono, M.T',
-    jabatan: 'Senior Manager Sistem Informasi',
-    tempat_kedudukan: 'Daop 6 Yogyakarta',
-    personal_area: 'PA01',
-    unit: 'Divisi Teknologi Informasi'
-  },
-  {
-    id: 22,
-    nipp: '68120',
-    nama: 'Denny Kurnia, S.Kom',
-    jabatan: 'Officer Infrastruktur & Jaringan TI',
-    tempat_kedudukan: 'Daop 6 Yogyakarta',
-    personal_area: 'PA02',
-    unit: 'Unit Teknologi Informasi'
-  },
-  {
-    id: 23,
-    nipp: '49201',
-    nama: 'Siti Rahmawati, S.E',
-    jabatan: 'Supervisor Pengelolaan Aset & Keuangan',
-    tempat_kedudukan: 'Daop 6 Yogyakarta',
-    personal_area: 'PA02',
-    unit: 'Unit Keuangan'
-  },
-  {
-    id: 24,
-    nipp: '54109',
-    nama: 'Dimas Prasetyo, S.Kom',
-    jabatan: 'Senior Specialist Cloud & Data Center',
-    tempat_kedudukan: 'Daop 6 Yogyakarta',
-    personal_area: 'PA01',
-    unit: 'Unit Teknologi Informasi'
-  }
-];
+// Default master pegawai list (can be extended later)
+const DEFAULT_MASTER_PEGAWAI = [];
 
 const DEFAULT_ITEMS = [
   {
@@ -109,39 +48,19 @@ const DEFAULT_ITEMS = [
 ];
 
 export default function BastBarangFormPage({ user }) {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const isEditMode = Boolean(id);
 
-  // --- 1. Field Data: Informasi Serah Terima ---
-  const [generalData, setGeneralData] = useState({
-    tanggal_serah_terima: '2026-10-18',
-    tempat_serah_terima: 'Daop 6 Yogyakarta',
-    nama_unit: 'Unit Teknologi Informasi',
-    wilayah: 'Daop 6 Yogyakarta',
-  });
+  const [isLoadingDoc, setIsLoadingDoc] = useState(isEditMode);
+  const [existingDoc, setExistingDoc] = useState(null);
+  const [isLockedNonDraft, setIsLockedNonDraft] = useState(false);
 
-  // --- 2. Field Data: Penyerah ---
-  const [penyerah, setPenyerah] = useState({
-    nama: user?.name || 'Budi Santoso',
-    nipp: user?.nip || 'P001',
-    jabatan: user?.roleLabel || 'Manager',
-    tempat_kedudukan: user?.location || 'Yogyakarta',
-    personal_area: 'PA01',
-  });
-
-  // --- 3. Field Data: Penerima ---
-  const [penerima, setPenerima] = useState({
-    nama: 'Andi Wijaya',
-    nipp: 'P002',
-    jabatan: 'Staff',
-    tempat_kedudukan: 'Yogyakarta',
-    personal_area: 'PA02',
-  });
 
   // --- 4. Penandatangan Kedua (penyerah_user_id) ---
   const [penyerahUserId, setPenyerahUserId] = useState(25);
 
-  // --- 5. Catatan Tambahan (note) ---
-  const [note, setNote] = useState('Mohon ditandatangani pihak penyerah');
+  // Note field removed as per requirement
 
   // --- 6. PIN Tanda Tangan Pembuat (signature_pin) ---
   const [signaturePin, setSignaturePin] = useState('123456');
@@ -169,8 +88,34 @@ export default function BastBarangFormPage({ user }) {
 
   // --- Tanda Tangan Langsung (Direct Signature Modal) ---
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
-  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'saved'
+  const [note, setNote] = useState('');
+  // --- 1. Field Data: Informasi Serah Terima (manual input) ---
+  const [generalData, setGeneralData] = useState({
+    tanggal_serah_terima: '',
+    tempat_serah_terima: '',
+    nama_unit: '',
+    wilayah: ''
+  });
+  // --- 2. Field Data: Penyerah (manual input) ---
+  const [penyerah, setPenyerah] = useState({
+    nama: '',
+    nipp: '',
+    jabatan: '',
+    tempat_kedudukan: '',
+    personal_area: ''
+  });
+  // --- 3. Field Data: Penerima (manual input) ---
+  const [penerima, setPenerima] = useState({
+    nama: '',
+    nipp: '',
+    jabatan: '',
+    tempat_kedudukan: '',
+    personal_area: ''
+  });
+  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'upload' | 'saved'
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [selectedSignatureFile, setSelectedSignatureFile] = useState(null);
+  const [signatureUploadPreview, setSignatureUploadPreview] = useState(null);
   const [hasServerSignature, setHasServerSignature] = useState(false);
   const [serverSignatureUrl, setServerSignatureUrl] = useState(null);
   const [isAgreementChecked, setIsAgreementChecked] = useState(true);
@@ -179,10 +124,99 @@ export default function BastBarangFormPage({ user }) {
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
 
+  const handleSignatureFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+      setSignatureError('Format file harus berupa gambar PNG atau JPG/JPEG.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setSignatureError('Ukuran file tanda tangan maksimal 5 MB.');
+      return;
+    }
+    setSignatureError(null);
+    setSelectedSignatureFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setSignatureUploadPreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // --- Submission State ---
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null); // timestamp of last successful draft save
   const [submitSuccess, setSubmitSuccess] = useState(null);
   const [submitError, setSubmitError] = useState(null);
+
+
+  // Fetch draft document when in Edit Mode
+  useEffect(() => {
+    if (!id) return;
+    async function loadDraftDoc() {
+      setIsLoadingDoc(true);
+      try {
+        const res = await api.getDocument(id);
+        const doc = res?.data || res;
+        const data = doc?.data || {};
+        setExistingDoc(doc);
+
+        const status = (doc?.status || '').toLowerCase();
+        if (status && status !== 'draft' && status !== 'draf') {
+          setIsLockedNonDraft(true);
+        }
+
+        if (data.tanggal_serah_terima || data.tempat_serah_terima || data.nama_unit || data.wilayah) {
+          setGeneralData({
+            tanggal_serah_terima: data.tanggal_serah_terima || '',
+            tempat_serah_terima: data.tempat_serah_terima || '',
+            nama_unit: data.nama_unit || '',
+            wilayah: data.wilayah || '',
+          });
+        }
+        if (data.penyerah) {
+          setPenyerah({
+            nama: data.penyerah.nama || '',
+            nipp: data.penyerah.nipp || '',
+            jabatan: data.penyerah.jabatan || '',
+            tempat_kedudukan: data.penyerah.tempat_kedudukan || '',
+            personal_area: data.penyerah.personal_area || '',
+          });
+        }
+        if (data.penerima) {
+          setPenerima({
+            nama: data.penerima.nama || '',
+            nipp: data.penerima.nipp || '',
+            jabatan: data.penerima.jabatan || '',
+            tempat_kedudukan: data.penerima.tempat_kedudukan || '',
+            personal_area: data.penerima.personal_area || '',
+          });
+        }
+        const secondPartyId = doc.penyerah_user_id || data.penyerah_user_id || doc.approver_id;
+        if (secondPartyId) setPenyerahUserId(Number(secondPartyId));
+
+        const docItems = doc.items || data.items;
+        if (Array.isArray(docItems) && docItems.length > 0) {
+          setItems(docItems.map((it, idx) => ({
+            id: it.id || idx + 1,
+            nama_barang: it.nama_barang || it.nama || '',
+            brand_series: it.brand_series || it.brand || '',
+            no_inventaris: it.no_inventaris || it.nomor_inventaris || '',
+            serial_number: it.serial_number || '',
+            keterangan: it.keterangan || '',
+          })));
+        }
+      } catch (err) {
+        console.error('Failed to load draft document for edit:', err);
+        setSubmitError('Gagal memuat dokumen draf: ' + (err.message || 'Dokumen tidak ditemukan'));
+      } finally {
+        setIsLoadingDoc(false);
+      }
+    }
+    loadDraftDoc();
+  }, [id]);
 
   // Load registered users and user signature
   useEffect(() => {
@@ -192,17 +226,27 @@ export default function BastBarangFormPage({ user }) {
         const list = Array.isArray(res) ? res : (res?.data || []);
         setApiUsers(list);
 
+        // Auto-select valid second party who is not the current user
+        if (list.length > 0) {
+          const other = list.find((u) => !user?.id || Number(u.id) !== Number(user.id));
+          if (other) {
+            setPenyerahUserId(Number(other.id));
+          }
+        }
+
         // Check user profile for registered signature
         try {
           const me = await api.getMe();
           if (me?.user?.has_signature || me?.user?.signature_path) {
             setHasServerSignature(true);
             setServerSignatureUrl(api.getSignatureUrl());
+            setSignatureMode('saved');
           }
         } catch {
           if (user?.has_signature) {
             setHasServerSignature(true);
             setServerSignatureUrl(api.getSignatureUrl());
+            setSignatureMode('saved');
           }
         }
       } catch (err) {
@@ -214,7 +258,7 @@ export default function BastBarangFormPage({ user }) {
 
   // Combined master list of searchable pegawai
   const allPegawai = useMemo(() => {
-    const list = [...MASTER_PEGAWAI];
+    const list = [...DEFAULT_MASTER_PEGAWAI];
     apiUsers.forEach((u) => {
       const nip = u.nip || `KAI-${u.id}`;
       if (!list.some((p) => p.nipp === nip || Number(p.id) === Number(u.id))) {
@@ -440,6 +484,128 @@ export default function BastBarangFormPage({ user }) {
     return true;
   };
 
+  // -----------------------------------------------------------------------
+  // handleSaveDraft: simpan/update draft tanpa submit, lalu refresh state
+  // -----------------------------------------------------------------------
+  const handleSaveDraft = async () => {
+    if (!validateForm()) return;
+    setIsSavingDraft(true);
+    setSubmitError(null);
+    setDraftSavedAt(null);
+
+    const payload = {
+      type: 'ho01',
+      data: {
+        tanggal_serah_terima: generalData.tanggal_serah_terima,
+        tempat_serah_terima: generalData.tempat_serah_terima,
+        nama_unit: generalData.nama_unit,
+        wilayah: generalData.wilayah,
+        penyerah: {
+          nama: penyerah.nama,
+          nipp: penyerah.nipp,
+          jabatan: penyerah.jabatan,
+          tempat_kedudukan: penyerah.tempat_kedudukan,
+          personal_area: penyerah.personal_area,
+        },
+        penerima: {
+          nama: penerima.nama,
+          nipp: penerima.nipp,
+          jabatan: penerima.jabatan,
+          tempat_kedudukan: penerima.tempat_kedudukan,
+          personal_area: penerima.personal_area,
+          owner_responsible: penerima.nama,
+          custodian: generalData.nama_unit,
+        },
+      },
+      items: items.map((it) => ({
+        id: it.id,
+        nama_barang: it.nama_barang,
+        brand_series: it.brand_series || null,
+        no_inventaris: it.no_inventaris,
+        serial_number: it.serial_number || null,
+        keterangan: it.keterangan || null,
+      })),
+      submit: false,
+      approver_id: Number(penyerahUserId) || 25,
+    };
+
+    try {
+      let savedDoc;
+      if (isEditMode) {
+        // Update existing draft — kirim seluruh form terbaru
+        const res = await api.updateDocument(id, payload);
+        console.log('Update draft response:', res);
+        savedDoc = res?.document || res?.data || res;
+      } else {
+        // Buat draft baru
+        const res = await api.createDocument(payload);
+        savedDoc = res?.document || res?.data || res;
+        // Redirect ke edit route agar URL mendapat ID
+        const newId = savedDoc?.id;
+        if (newId) {
+          setIsSavingDraft(false);
+          setDraftSavedAt(new Date());
+          setTimeout(() => navigate(`/bast-barang/${newId}/edit`), 800);
+          return;
+        }
+      }
+
+      // Refresh state dari respons server (pakai data terbaru yang tersimpan)
+      const doc = savedDoc || {};
+      const data = doc?.data || {};
+
+      if (data.tanggal_serah_terima || data.tempat_serah_terima || data.nama_unit || data.wilayah) {
+        setGeneralData({
+          tanggal_serah_terima: data.tanggal_serah_terima || generalData.tanggal_serah_terima,
+          tempat_serah_terima: data.tempat_serah_terima || generalData.tempat_serah_terima,
+          nama_unit: data.nama_unit || generalData.nama_unit,
+          wilayah: data.wilayah || generalData.wilayah,
+        });
+      }
+      if (data.penyerah) {
+        setPenyerah((prev) => ({
+          nama: data.penyerah.nama || prev.nama,
+          nipp: data.penyerah.nipp || prev.nipp,
+          jabatan: data.penyerah.jabatan || prev.jabatan,
+          tempat_kedudukan: data.penyerah.tempat_kedudukan || prev.tempat_kedudukan,
+          personal_area: data.penyerah.personal_area || prev.personal_area,
+        }));
+      }
+      if (data.penerima) {
+        setPenerima((prev) => ({
+          nama: data.penerima.nama || prev.nama,
+          nipp: data.penerima.nipp || prev.nipp,
+          jabatan: data.penerima.jabatan || prev.jabatan,
+          tempat_kedudukan: data.penerima.tempat_kedudukan || prev.tempat_kedudukan,
+          personal_area: data.penerima.personal_area || prev.personal_area,
+        }));
+      }
+      // Note handling removed (state no longer exists)
+      const secondPartyId = doc.penyerah_user_id || data.penyerah_user_id || doc.approver_id;
+      if (secondPartyId) setPenyerahUserId(Number(secondPartyId));
+      const docItems = doc.items || data.items;
+      if (Array.isArray(docItems) && docItems.length > 0) {
+        setItems(docItems.map((it, idx) => ({
+          id: it.id || idx + 1,
+          nama_barang: it.nama_barang || it.nama || 'Perangkat TI',
+          brand_series: it.brand_series || it.brand || '',
+          no_inventaris: it.no_inventaris || it.nomor_inventaris || '',
+          serial_number: it.serial_number || '',
+          keterangan: it.keterangan || '',
+        })));
+      }
+
+      setDraftSavedAt(new Date());
+      // Auto-hide success badge setelah 4 detik
+      setTimeout(() => setDraftSavedAt(null), 4000);
+    } catch (err) {
+      console.error('Save draft error:', err);
+      setSubmitError('Gagal menyimpan draf: ' + (err.message || 'Terjadi kesalahan'));
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
   // Triggered when user clicks "Sahkan & Tanda Tangani Langsung"
   const handleOpenSignatureModal = () => {
     setSubmitError(null);
@@ -457,6 +623,10 @@ export default function BastBarangFormPage({ user }) {
         setSignatureError('PIN tanda tangan pembuat (signature_pin) wajib diisi.');
         return;
       }
+      if (signatureMode === 'upload' && !selectedSignatureFile && !hasServerSignature) {
+        setSignatureError('Harap pilih file gambar tanda tangan PNG/JPG terlebih dahulu.');
+        return;
+      }
       if (signatureMode === 'draw' && !hasDrawnSignature) {
         setSignatureError('Harap bubuhkan tanda tangan pada kotak tanda tangan digital.');
         return;
@@ -472,7 +642,28 @@ export default function BastBarangFormPage({ user }) {
     setSignatureError(null);
 
     try {
-      // Struktur payload sesuai format spesifikasi BAST Barang (tanpa approval)
+      const secondPartyId = Number(penyerahUserId) || 25;
+
+      // 1. Jika submitNow dan mode upload atau draw, upload tanda tangan ke profil user di backend terlebih dahulu
+      if (submitNow) {
+        if (signatureMode === 'upload' && selectedSignatureFile) {
+          const formData = new FormData();
+          formData.append('signature', selectedSignatureFile);
+          formData.append('pin', String(signaturePin).trim());
+          await api.uploadSignature(formData);
+        } else if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
+          const canvas = canvasRef.current;
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+          if (blob) {
+            const formData = new FormData();
+            formData.append('signature', blob, 'signature_draw.png');
+            formData.append('pin', String(signaturePin).trim());
+            await api.uploadSignature(formData);
+          }
+        }
+      }
+
+      // 2. Struktur payload sesuai format spesifikasi BAST Barang (HO-01)
       let payload = {
         type: 'ho01',
         data: {
@@ -508,35 +699,56 @@ export default function BastBarangFormPage({ user }) {
       };
 
       if (submitNow) {
-        const secondPartyId = Number(penyerahUserId) || 25;
         payload.penyerah_user_id = secondPartyId;
-        // approver_id dikirim otomatis sesuai penyerah_user_id agar lolos validasi backend Laravel
         payload.approver_id = secondPartyId;
         payload.signature_pin = String(signaturePin).trim();
-        if (note && note.trim()) {
-          payload.note = note.trim();
-        }
+        // Note omitted from payload (state removed)
       } else {
-        // Pada saat simpan draft, kirim juga default jika backend mewajibkan
-        payload.approver_id = Number(penyerahUserId) || 25;
+        payload.approver_id = secondPartyId;
       }
 
-      console.log('Mengirim Request BAST Barang (HO-01):', payload);
-      const res = await api.createDocument(payload);
+      let res;
+      let targetDocId = id;
+
+      if (isEditMode) {
+        // A. Perbarui data formulir draf terlebih dahulu
+        await api.updateDocument(id, {
+          data: payload.data,
+          items: payload.items,
+        });
+
+        // B. Jika user mengesahkan & tanda tangan langsung, panggil endpoint submit agar status resmi menjadi in_review
+        if (submitNow) {
+          res = await api.submitDocument(id, {
+            approver_id: secondPartyId,
+            penyerah_user_id: secondPartyId,
+            signature_pin: String(signaturePin).trim(),
+            note: note && note.trim() ? note.trim() : null,
+          });
+        }
+      } else {
+        // Buat dokumen baru di server
+        res = await api.createDocument(payload);
+        targetDocId = res?.document?.id || res?.data?.id || res?.id;
+      }
 
       setIsSignatureModalOpen(false);
       setSubmitSuccess(
         submitNow
-          ? (res?.message || 'BAST Barang berhasil ditandatangani pembuat dan diteruskan ke pihak penandatangan kedua!')
-          : (res?.message || 'Draf BAST Barang berhasil disimpan!')
+          ? 'BAST Barang berhasil ditandatangani pembuat dan status resmi diajukan (in_review)!'
+          : (isEditMode ? 'Perubahan draf BAST Barang berhasil disimpan!' : 'Draf BAST Barang baru berhasil disimpan!')
       );
 
       setTimeout(() => {
-        navigate('/');
-      }, 2000);
+        if (targetDocId) {
+          navigate(`/bast-barang/${targetDocId}`);
+        } else {
+          navigate('/bast-barang');
+        }
+      }, 1500);
     } catch (err) {
       console.error('Submission error:', err);
-      const msg = err.message || 'Gagal menyimpan dokumen serah terima barang.';
+      const msg = err.message || (err.errors ? Object.values(err.errors).flat().join(', ') : 'Gagal memproses dokumen BAST.');
       setSubmitError(msg);
       if (isSignatureModalOpen) {
         setSignatureError(msg);
@@ -546,6 +758,15 @@ export default function BastBarangFormPage({ user }) {
     }
   };
 
+  if (isLoadingDoc) {
+    return (
+      <div className="w-full max-w-4xl mx-auto py-24 text-center space-y-4">
+        <Loader2 className="w-8 h-8 text-[#f05a22] animate-spin mx-auto" />
+        <p className="text-sm font-semibold text-slate-700">Memuat data draf BAST Barang...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6 pb-24 select-none">
       {/* Top Header */}
@@ -553,26 +774,53 @@ export default function BastBarangFormPage({ user }) {
         <div>
           <button
             type="button"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(isEditMode ? `/bast-barang/${id}` : '/bast-barang')}
             className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-medium mb-1 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Kembali ke Beranda
+            {isEditMode ? 'Kembali ke Pratinjau Dokumen' : 'Kembali ke Daftar BAST'}
           </button>
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Formulir BAST Serah Terima Barang (HO-01)
+              {isEditMode ? `Edit Draf BAST Barang #${id}` : 'Formulir BAST Serah Terima Barang (HO-01)'}
             </h1>
-            <span className="text-[11px] font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-              ALUR DUA PIHAK (TANPA APPROVAL)
-            </span>
+            {isEditMode ? (
+              <span className="text-[11px] font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                <Edit3 className="w-3 h-3 text-amber-700" />
+                MODE EDIT DRAF
+              </span>
+            ) : (
+              <span className="text-[11px] font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                ALUR DUA PIHAK (TANPA APPROVAL)
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-4xl leading-relaxed">
-            Berita Acara Serah Terima Barang / Perangkat Keras TI antar pegawai PT Kereta Api Indonesia (Persero).
-            Dokumen langsung ditandatangani oleh pembuat dan diteruskan langsung ke pihak penandatangan kedua tanpa alur approval bertingkat.
+            {isEditMode
+              ? 'Anda sedang mengedit berkas draf BAST. Perubahan data dapat disimpan kembali sebagai draf atau langsung disahkan & ditandatangani secara digital.'
+              : 'Berita Acara Serah Terima Barang / Perangkat Keras TI antar pegawai PT Kereta Api Indonesia (Persero). Dokumen langsung ditandatangani oleh pembuat dan diteruskan langsung ke pihak penandatangan kedua tanpa alur approval bertingkat.'}
           </p>
         </div>
       </div>
+
+      {/* Non-Draft Lock Notice */}
+      {isLockedNonDraft && (
+        <div className="p-4 bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-xl text-xs font-medium flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <Lock className="w-5 h-5 text-amber-600 shrink-0" />
+            <span>
+              <strong>Perhatian:</strong> Dokumen BAST ini tidak lagi berstatus draf (Status: <strong className="uppercase">{existingDoc?.status || 'in_review'}</strong>). Dokumen yang sudah ditandatangani atau dalam proses penandatanganan pihak kedua tidak dapat diedit kembali.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/bast-barang/${id}`)}
+            className="px-3.5 py-1.5 bg-[#0a192f] hover:bg-[#122b52] text-white rounded-lg font-bold shrink-0 transition-colors"
+          >
+            Buka Dokumen
+          </button>
+        </div>
+      )}
 
       {/* Notification Banner */}
       {submitSuccess && (
@@ -821,7 +1069,7 @@ export default function BastBarangFormPage({ user }) {
                     type="text"
                     value={penerima.nama}
                     onChange={(e) => setPenerima({ ...penerima, nama: e.target.value })}
-                    placeholder="Andi Wijaya"
+                    placeholder=""
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-semibold focus:ring-1 focus:ring-[#f05a22] focus:outline-none"
                   />
                 </div>
@@ -1061,53 +1309,82 @@ export default function BastBarangFormPage({ user }) {
       </div>
 
       {/* FOOTER ACTIONS BAR */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
-          <Info className="w-4 h-4 text-blue-600" />
-          <span>Status setelah tanda tangan pembuat: <strong className="text-blue-700 font-bold">in_review</strong> (menunggu tanda tangan pihak kedua, tanpa approval).</span>
-        </div>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Draft saved banner */}
+        {draftSavedAt && (
+          <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2 text-xs text-emerald-800 font-semibold animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              Draf berhasil disimpan pada{' '}
+              <strong>
+                {draftSavedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </strong>
+              . Anda dapat melanjutkan pengeditan.
+            </span>
+          </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-          >
-            Batal
-          </button>
+        <div className="p-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+            <Info className="w-4 h-4 text-blue-600" />
+            <span>Status setelah tanda tangan pembuat: <strong className="text-blue-700 font-bold">in_review</strong> (menunggu tanda tangan pihak kedua).</span>
+          </div>
 
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => handleSubmitDocument(false)}
-            className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5"
-          >
-            <Save className="w-3.5 h-3.5" />
-            Simpan Draf (submit: false)
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => navigate(isEditMode ? `/bast-barang/${id}` : '/bast-barang')}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              Batal
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setIsPreviewPdfModalOpen(true)}
-            className="px-4 py-2 text-xs font-semibold text-white bg-[#0a192f] hover:bg-[#122b52] rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
-          >
-            <FileText className="w-3.5 h-3.5 text-sky-400" />
-            Pratinjau Format Cetak (PDF)
-          </button>
+            {/* ---- SAVE DRAFT BUTTON ---- */}
+            <button
+              type="button"
+              disabled={isSavingDraft || isSubmitting || isLockedNonDraft}
+              onClick={handleSaveDraft}
+              className="px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+            >
+              {isSavingDraft ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : draftSavedAt ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              {isSavingDraft
+                ? 'Menyimpan Draf...'
+                : draftSavedAt
+                ? 'Draf Tersimpan'
+                : isEditMode
+                ? 'Simpan Draf'
+                : 'Simpan sebagai Draf'}
+            </button>
 
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={handleOpenSignatureModal}
-            className="px-5 py-2 text-xs font-bold text-white bg-[#f05a22] hover:bg-[#d94e18] rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-98"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <PenTool className="w-4 h-4 stroke-[2.5]" />
-            )}
-            Sahkan & Tanda Tangani Langsung
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsPreviewPdfModalOpen(true)}
+              className="px-4 py-2 text-xs font-semibold text-white bg-[#0a192f] hover:bg-[#122b52] rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+            >
+              <FileText className="w-3.5 h-3.5 text-sky-400" />
+              Pratinjau PDF
+            </button>
+
+            <button
+              type="button"
+              disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
+              onClick={handleOpenSignatureModal}
+              className="px-5 py-2 text-xs font-bold text-white bg-[#f05a22] hover:bg-[#d94e18] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-98"
+            >
+              {isSubmitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <PenTool className="w-4 h-4 stroke-[2.5]" />
+              )}
+              Sahkan & Tanda Tangani Langsung
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1181,41 +1458,52 @@ export default function BastBarangFormPage({ user }) {
                 </p>
               </div>
 
-              {/* Canvas / Tanda Tangan */}
+              {/* Opsi Metode Tanda Tangan */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-slate-800 block">
-                    Goreskan Tanda Tangan Digital Anda *
+                    Metode Tanda Tangan Digital Pembuat *
                   </label>
-                  {hasServerSignature && (
-                    <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-semibold">
-                      <button
-                        type="button"
-                        onClick={() => setSignatureMode('draw')}
-                        className={`px-2 py-0.5 rounded-md transition-all ${
-                          signatureMode === 'draw'
-                            ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        Goreskan Langsung
-                      </button>
+                  <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setSignatureMode('draw')}
+                      className={`px-2 py-0.5 rounded-md transition-all ${
+                        signatureMode === 'draw'
+                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Goreskan Langsung
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignatureMode('upload')}
+                      className={`px-2 py-0.5 rounded-md transition-all ${
+                        signatureMode === 'upload'
+                          ? 'bg-white text-[#f05a22] shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Unggah File PNG
+                    </button>
+                    {hasServerSignature && (
                       <button
                         type="button"
                         onClick={() => setSignatureMode('saved')}
                         className={`px-2 py-0.5 rounded-md transition-all ${
                           signatureMode === 'saved'
-                            ? 'bg-white text-[#f05a22] shadow-2xs font-bold'
+                            ? 'bg-white text-emerald-700 shadow-2xs font-bold'
                             : 'text-slate-500 hover:text-slate-800'
                         }`}
                       >
-                        Tanda Tangan Tersimpan
+                        TTD Profil
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
-                {signatureMode === 'draw' ? (
+                {signatureMode === 'draw' && (
                   <div>
                     <div className="relative border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-white transition-colors overflow-hidden group">
                       <canvas
@@ -1243,7 +1531,7 @@ export default function BastBarangFormPage({ user }) {
 
                     <div className="flex justify-between items-center mt-1.5">
                       <span className="text-[10px] text-slate-400 font-medium">
-                        {hasDrawnSignature ? '✓ Tanda tangan siap dibubuhkan' : 'Wajib menggambar tanda tangan'}
+                        {hasDrawnSignature ? '✓ Tanda tangan tergores & siap diunggah' : 'Wajib menggambar tanda tangan'}
                       </span>
                       <button
                         type="button"
@@ -1255,7 +1543,63 @@ export default function BastBarangFormPage({ user }) {
                       </button>
                     </div>
                   </div>
-                ) : (
+                )}
+
+                {signatureMode === 'upload' && (
+                  <div className="space-y-2">
+                    <div className="relative border-2 border-dashed border-slate-300 hover:border-[#f05a22] rounded-xl bg-slate-50 hover:bg-white p-4 transition-colors flex flex-col items-center justify-center min-h-36 text-center">
+                      {signatureUploadPreview ? (
+                        <div className="space-y-2 w-full">
+                          <img
+                            src={signatureUploadPreview}
+                            alt="Preview TTD Upload"
+                            className="h-24 max-w-full object-contain mx-auto border border-slate-200 rounded-lg p-2 bg-white"
+                          />
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-[11px] font-semibold text-emerald-700">
+                              ✓ {selectedSignatureFile?.name || 'File tanda tangan terpilih'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSignatureFile(null);
+                                setSignatureUploadPreview(null);
+                              }}
+                              className="text-[10px] text-rose-600 hover:underline font-bold"
+                            >
+                              Ganti
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="cursor-pointer flex flex-col items-center gap-2 w-full py-2">
+                          <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-[#f05a22]">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-[#f05a22] hover:underline">
+                              Klik untuk pilih file Tanda Tangan PNG / JPG
+                            </span>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Format didukung: PNG transparan, JPG, JPEG (Maksimal 5 MB)
+                            </p>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                            onChange={handleSignatureFileChange}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      💡 <strong>Tips:</strong> Disarankan menggunakan file <strong>.PNG transparan</strong> agar tanda tangan menyatu rapi dan resmi pada lembar berita acara BAST.
+                    </p>
+                  </div>
+                )}
+
+                {signatureMode === 'saved' && (
                   <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex flex-col items-center justify-center min-h-36">
                     {serverSignatureUrl ? (
                       <div className="text-center space-y-2">
