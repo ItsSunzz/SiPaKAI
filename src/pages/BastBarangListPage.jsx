@@ -14,7 +14,9 @@ import {
   AlertCircle,
   PenTool,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Edit3,
+  FileEdit
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 
@@ -226,7 +228,9 @@ export default function BastBarangListPage({ user }) {
       doc.nama_barang?.toLowerCase().includes(q) ||
       doc.category_label?.toLowerCase().includes(q);
 
-    const matchStatus = statusFilter === 'all' || doc.status === statusFilter;
+    const matchStatus = statusFilter === 'all' || 
+      doc.status === statusFilter || 
+      (statusFilter === 'draft' && (doc.status === 'draft' || doc.status === 'draf'));
     const matchUnit = unitFilter === 'all' || 
       doc.penyerah_unit?.toLowerCase().includes(unitFilter.toLowerCase()) ||
       doc.penerima_unit?.toLowerCase().includes(unitFilter.toLowerCase());
@@ -239,6 +243,7 @@ export default function BastBarangListPage({ user }) {
   const pendingCount = documents.filter(d => d.status === 'in_review').length;
   const approvedCount = documents.filter(d => d.status === 'approved').length;
   const rejectedCount = documents.filter(d => d.status === 'rejected').length;
+  const draftCount = documents.filter(d => d.status === 'draft' || d.status === 'draf').length;
 
   const handleOpenDetail = (doc) => {
     navigate(`/bast-barang/${doc.id}`);
@@ -399,6 +404,36 @@ export default function BastBarangListPage({ user }) {
         </div>
       )}
 
+      {/* Notice for Drafts */}
+      {draftCount > 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+              <FileEdit className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-800">
+                Tersimpan {draftCount} Dokumen Draf BAST
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Draf belum ditandatangani. Pihak penyerah dapat mengedit atau melanjutkan pengesahan kapan saja.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'draft' ? 'all' : 'draft')}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+              statusFilter === 'draft'
+                ? 'bg-amber-500 text-white border-amber-600'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+            }`}
+          >
+            {statusFilter === 'draft' ? 'Tampilkan Semua' : 'Filter Draf'}
+          </button>
+        </div>
+      )}
+
       {/* Filters Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-wrap gap-4 items-center shadow-xs">
         <div className="relative flex-1 min-w-[260px]">
@@ -418,6 +453,7 @@ export default function BastBarangListPage({ user }) {
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-[#f05a22]"
           >
             <option value="all">Semua Status Verifikasi</option>
+            <option value="draft">Draf Pengajuan {draftCount > 0 ? `(${draftCount})` : ''}</option>
             <option value="in_review">Menunggu Persetujuan</option>
             <option value="approved">Disetujui Penuh</option>
             <option value="rejected">Ditolak / Revisi</option>
@@ -484,6 +520,7 @@ export default function BastBarangListPage({ user }) {
               </tr>
             ) : (
               filteredDocuments.map((doc, idx) => {
+                const isDraft = doc.status === 'draft' || doc.status === 'draf';
                 const isPending = doc.status === 'in_review';
                 const isApproved = doc.status === 'approved';
                 const isRejected = doc.status === 'rejected';
@@ -539,46 +576,72 @@ export default function BastBarangListPage({ user }) {
                     {/* STATUS */}
                     <td className="px-5 py-3.5">
                       <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full border inline-flex items-center gap-1.5
-                        ${isPending ? 'bg-orange-50 text-orange-700 border-orange-200' : 
+                        ${isDraft ? 'bg-slate-100 text-slate-700 border-slate-300' :
+                          isPending ? 'bg-orange-50 text-orange-700 border-orange-200' : 
                           isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
                           isRejected ? 'bg-rose-50 text-rose-700 border-rose-200' :
                           'bg-slate-50 text-slate-700 border-slate-200'}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${
+                          isDraft ? 'bg-slate-500' :
                           isPending ? 'bg-orange-500 animate-pulse' : 
                           isApproved ? 'bg-emerald-500' : 
                           isRejected ? 'bg-rose-500' : 'bg-slate-400'
                         }`}></span>
-                        <span>{doc.status_label || (isApproved ? 'Disetujui Penuh (Sah)' : 'Tahap 1: Verifikasi Atasan')}</span>
+                        <span>{isDraft ? 'Draf Pengajuan' : (doc.status_label || (isApproved ? 'Disetujui Penuh (Sah)' : 'Tahap 1: Verifikasi Atasan'))}</span>
                       </span>
                     </td>
 
                     {/* AKSI */}
                     <td className="px-5 py-3.5 text-center">
-                      <div className="flex items-center justify-center">
-                        <button
-                          type="button"
-                          id={`btn-view-${doc.id || idx}`}
-                          onClick={() => handleOpenDetail(doc)}
-                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                            doc.can_sign && isPending
-                              ? 'bg-[#f05a22] hover:bg-[#d94a18] text-white shadow-[#f05a22]/20'
-                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                          }`}
-                          title={doc.can_sign && isPending ? 'Buka Telaah & Tanda Tangan Dokumen' : 'Buka Rincian Dokumen BAST'}
-                        >
-                          {doc.can_sign && isPending ? (
-                            <>
-                              <CheckSquare className="w-3.5 h-3.5" />
-                              <span>Review & Tanda Tangan</span>
-                            </>
-                          ) : (
-                            <>
+                      <div className="flex items-center justify-center gap-1.5">
+                        {isDraft ? (
+                          <>
+                            <button
+                              type="button"
+                              id={`btn-edit-${doc.id || idx}`}
+                              onClick={() => navigate(`/bast-barang/${doc.id}/edit`)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer bg-amber-500 hover:bg-amber-600 text-white"
+                              title="Edit dan Lanjutkan Pengisian Draf"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit Draf</span>
+                            </button>
+                            <button
+                              type="button"
+                              id={`btn-view-${doc.id || idx}`}
+                              onClick={() => handleOpenDetail(doc)}
+                              className="inline-flex items-center p-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer"
+                              title="Lihat Pratinjau Draf"
+                            >
                               <Eye className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Lihat Dokumen</span>
-                            </>
-                          )}
-                        </button>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            id={`btn-view-${doc.id || idx}`}
+                            onClick={() => handleOpenDetail(doc)}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                              doc.can_sign && isPending
+                                ? 'bg-[#f05a22] hover:bg-[#d94a18] text-white shadow-[#f05a22]/20'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                            }`}
+                            title={doc.can_sign && isPending ? 'Buka Telaah & Tanda Tangan Dokumen' : 'Buka Rincian Dokumen BAST'}
+                          >
+                            {doc.can_sign && isPending ? (
+                              <>
+                                <CheckSquare className="w-3.5 h-3.5" />
+                                <span>Review & Tanda Tangan</span>
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Lihat Dokumen</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

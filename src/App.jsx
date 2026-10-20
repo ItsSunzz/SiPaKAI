@@ -234,10 +234,12 @@ export default function App() {
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast-barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast-barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast-barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast-barang/:id/review" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast/barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast/barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast/barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>

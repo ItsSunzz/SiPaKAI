@@ -136,6 +136,29 @@ export const api = {
     })
   },
 
+  async updateDocument(id, payload) {
+    try {
+      return await request(`/documents/${id}`, {
+        method: 'PUT',
+        body: payload,
+      })
+    } catch (err) {
+      if (err.status === 405 || err.status === 404) {
+        return await request(`/documents/${id}`, {
+          method: 'POST',
+          body: { ...payload, _method: 'PUT' },
+        })
+      }
+      throw err
+    }
+  },
+
+  async deleteDocument(id) {
+    return request(`/documents/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
   async actionDocument(id, { action, notes = '', next_approver_id = null, pin = null }) {
     return request(`/documents/${id}/action`, {
       method: 'POST',
