@@ -172,8 +172,33 @@ export const api = {
   },
 
   getDocumentPdfUrl(id) {
+    // Kembalikan URL dengan token di query string sebagai fallback untuk inline preview
     const token = getToken()
-    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}`
+    return `${API_BASE_URL}/documents/${id}/pdf?inline=1&token=${encodeURIComponent(token)}`
+  },
+
+  async downloadDocumentPdf(id, filename) {
+    // Download PDF yang benar menggunakan Authorization header (Sanctum auth)
+    const token = getToken()
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf`, {
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.message || `Gagal mengunduh PDF: HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `dokumen-${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   // Approvers list

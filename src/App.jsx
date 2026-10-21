@@ -227,9 +227,10 @@ export default function App() {
               onViewDocument={handleViewDocument} 
             />
           } />
-          <Route path="pemusnahan/:id/review" element={<PemusnahanReviewPage user={userProfile} />} />
-          <Route path="pemusnahan/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/create" element={<PemusnahanFormPage user={userProfile} />} />
+          <Route path="pemusnahan/:id/review" element={<PemusnahanReviewPage user={userProfile} />} />
+          <Route path="pemusnahan/review/:id" element={<PemusnahanReviewPage user={userProfile} />} />
+          <Route path="pemusnahan/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="penghapusan" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />

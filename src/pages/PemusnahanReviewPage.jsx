@@ -26,7 +26,10 @@ import {
   Upload,
   Image as ImageIcon,
   PenTool,
-  X
+  X,
+  Eye,
+  Maximize2,
+  ExternalLink
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 
@@ -53,6 +56,12 @@ export default function PemusnahanReviewPage({ user }) {
 
   // Status tanda tangan di profil user
   const [hasUserSignature, setHasUserSignature] = useState(user?.has_signature || false);
+
+  // Tab tampilan: 'details' (rincian aset & formulir) vs 'preview' (pratinjau dokumen resmi PDF)
+  const [activeViewTab, setActiveViewTab] = useState('details');
+  const [previewKey, setPreviewKey] = useState(Date.now());
+  const [isPdfLoading, setIsPdfLoading] = useState(true);
+  const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
 
   // Load document and approvers
   const loadDocumentData = async () => {
@@ -175,13 +184,42 @@ export default function PemusnahanReviewPage({ user }) {
   const isApproved = doc.status === 'approved';
   const isRejected = doc.status === 'rejected';
 
-  // Role check
-  const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
-  const isCurrentApprover = user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id);
-  const canTakeAction = isPending && (isAdminOrSuper || isCurrentApprover);
-
   // Sequential Step Calculation
   const approvalHistory = doc.approvals || doc.persetujuan || [];
+
+  // Periksa apakah user yang sedang login sudah pernah mengambil tindakan (approve / reject) pada dokumen ini
+  const userApprovalRecord = approvalHistory.find(a => {
+    const approverId = a.approver_id || a.penyetuju_id || a.user_id || a.approver?.id;
+    const isUser = Number(approverId) === Number(user?.id);
+    const hasApproved = (a.action === 'approved' || a.action === 'APPROVED' || a.aksi === 'approved' || a.aksi === 'APPROVED');
+    return isUser && hasApproved;
+  });
+  const hasUserApproved = Boolean(userApprovalRecord);
+
+  const userRejectRecord = approvalHistory.find(a => {
+    const approverId = a.approver_id || a.penyetuju_id || a.user_id || a.approver?.id;
+    const isUser = Number(approverId) === Number(user?.id);
+    const hasRejected = (a.action === 'rejected' || a.action === 'REJECTED' || a.aksi === 'rejected' || a.aksi === 'REJECTED');
+    return isUser && hasRejected;
+  });
+  const hasUserRejected = Boolean(userRejectRecord);
+  const hasUserActed = hasUserApproved || hasUserRejected;
+
+  // Hanya pejabat yang ditugaskan pada giliran aktif saat ini yang berhak mengambil tindakan
+  const currentApproverId = doc.penyetuju_id || doc.current_approver_id;
+  const isCurrentApprover = Boolean(
+    user?.id && 
+    currentApproverId && 
+    Number(user.id) === Number(currentApproverId)
+  );
+
+  // Tindakan HANYA tersedia jika:
+  // 1. Dokumen sedang pending (in_review)
+  // 2. User adalah pejabat giliran saat ini (isCurrentApprover)
+  // 3. User BELUM pernah menyelesaikan persetujuan/penolakan (!hasUserActed)
+  const canTakeAction = isPending && isCurrentApprover && !hasUserActed;
+
+  // Sequential Step Calculation
   const chain = doc.data?.approval_chain || [
     doc.data?.verifikator_1_id,
     doc.data?.verifikator_2_id,
@@ -282,17 +320,47 @@ export default function PemusnahanReviewPage({ user }) {
       return;
     }
 
+    // Hitung next_approver_id otomatis dari approval_chain
+    // Cari step pending saat ini, lalu cari verifikator berikutnya
+    let nextApproverId = null;
+    const approvalHistory = doc.approvals || doc.persetujuan || [];
+    const rawChain = (doc.data?.approval_chain && doc.data.approval_chain.length > 0)
+      ? doc.data.approval_chain
+      : [
+          doc.data?.verifikator_1_id,
+          doc.data?.verifikator_2_id,
+          doc.data?.verifikator_3_id,
+        ];
+    const chain = rawChain.filter(Boolean).length > 0
+      ? rawChain.filter(Boolean)
+      : [3, 1, 5]; // Fallback default hirarki KAI: Asmen (3) -> Manager (1) -> VP (5)
+
+    if (Array.isArray(chain) && chain.length > 1) {
+      // Temukan posisi approver aktif di chain
+      const currentApproverId = doc.penyetuju_id || doc.current_approver_id || (approvalHistory.find(a => a.aksi === 'pending' || a.action === 'PENDING')?.penyetuju_id) || (user?.id);
+      const currentIdx = chain.findIndex(id => Number(id) === Number(currentApproverId));
+      if (currentIdx !== -1 && currentIdx < chain.length - 1) {
+        // Masih ada verifikator berikutnya
+        nextApproverId = chain[currentIdx + 1];
+      }
+      // Jika currentIdx === chain.length - 1, berarti ini approver terakhir → null → APPROVED
+    }
+
     setIsSubmitting(true);
     try {
       const res = await api.actionDocument(doc.id, {
         action: 'approve',
         notes: notes.trim(),
         pin: pinInput.trim(),
-        next_approver_id: null,
+        next_approver_id: nextApproverId || null,
       });
 
       setIsPinModalOpen(false);
-      setSuccessMessage(res?.message || 'Dokumen berhasil disetujui dan dialirkan ke tahapan selanjutnya!');
+      setSuccessMessage(
+        nextApproverId
+          ? res?.message || 'Dokumen berhasil disetujui dan diteruskan ke verifikator tahap berikutnya!'
+          : res?.message || 'Dokumen berhasil disetujui penuh dan dinyatakan sah!'
+      );
       
       // Reload document data
       setTimeout(() => {
@@ -338,9 +406,13 @@ export default function PemusnahanReviewPage({ user }) {
 
 
 
-  const handleDownloadPdf = () => {
-    const pdfUrl = api.getDocumentPdfUrl(doc.id);
-    window.open(pdfUrl, '_blank');
+  const handleDownloadPdf = async () => {
+    try {
+      const filename = `${doc.number || doc.nomor || `dokumen-${doc.id}`}.pdf`.replace(/\//g, '-');
+      await api.downloadDocumentPdf(doc.id, filename);
+    } catch (err) {
+      setErrorMessage(err.message || 'Gagal mengunduh PDF dokumen.');
+    }
   };
 
   return (
@@ -373,16 +445,6 @@ export default function PemusnahanReviewPage({ user }) {
             <ArrowLeft className="w-4 h-4" />
             <span>Kembali ke Daftar</span>
           </button>
-
-          {(isApproved || isPending) && (
-            <button
-              onClick={handleDownloadPdf}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs"
-            >
-              <FileDown className="w-4 h-4" />
-              <span>{isApproved ? 'Unduh Formulir Permohonan PDF' : 'Unduh Draft PDF'}</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -450,10 +512,141 @@ export default function PemusnahanReviewPage({ user }) {
 
       {/* 4. Main Split Layout: 8 Kolom (Dokumen & Aset) + 4 Kolom (Alur & Tindakan) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* === KOLOM KIRI (7/12 atau 8/12): DOKUMEN & RINCIAN ASET === */}
+        {/* === KOLOM KIRI (7/12 atau 8/12): DOKUMEN & RINCIAN ASET ATAU PREVIEW PDF === */}
         <div className="lg:col-span-8 space-y-6">
-          {/* Bagian 1: Identitas Pemohon & Klasifikasi */}
-          <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+          {/* Tab Navigasi Mode Tampilan: Formulir vs Pratinjau PDF */}
+          <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveViewTab('details')}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                activeViewTab === 'details'
+                  ? 'bg-[#0b2046] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-4 h-4 text-[#f05a22]" />
+              <span>Rincian Formulir & Aset</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveViewTab('preview');
+                setIsPdfLoading(true);
+                setPreviewKey(Date.now());
+              }}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 relative ${
+                activeViewTab === 'preview'
+                  ? 'bg-[#0b2046] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Eye className="w-4 h-4 text-[#f05a22]" />
+              <span>Pratinjau Dokumen Resmi (PDF)</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-extrabold uppercase ${
+                activeViewTab === 'preview' ? 'bg-[#f05a22] text-white' : 'bg-orange-100 text-[#f05a22]'
+              }`}>
+                Preview
+              </span>
+            </button>
+          </div>
+
+          {activeViewTab === 'preview' ? (
+            /* === TAMPILAN PRATINJAU DOKUMEN RESMI PDF === */
+            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              {/* PDF Toolbar */}
+              <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#f05a22]" />
+                  <span className="text-xs font-bold text-slate-800">
+                    Pratinjau Format Surat Dinas [DSP-01]
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
+                    {doc.number || doc.nomor || `DOK-${doc.id}`}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPdfLoading(true);
+                      setPreviewKey(Date.now());
+                    }}
+                    title="Segarkan Tampilan PDF"
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isPdfLoading ? 'animate-spin text-[#f05a22]' : ''}`} />
+                    <span className="hidden sm:inline text-[11px]">Segarkan</span>
+                  </button>
+
+                  <a
+                    href={api.getDocumentPdfUrl(doc.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Buka PDF di Tab Baru"
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline text-[11px]">Buka Tab Baru</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreenPreview(true)}
+                    title="Buka Mode Layar Penuh"
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline text-[11px]">Layar Penuh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    className="px-3 py-1.5 bg-[#0b2046] hover:bg-[#163772] text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>Unduh PDF</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF Frame Container */}
+              <div className="relative bg-slate-100 min-h-[760px] flex flex-col items-center justify-center">
+                {isPdfLoading && (
+                  <div className="absolute inset-0 z-10 bg-slate-50/90 backdrop-blur-2xs flex flex-col items-center justify-center gap-2 text-slate-500">
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#f05a22]" />
+                    <span className="text-xs font-bold text-slate-800">Menyiapkan pratinjau dokumen resmi...</span>
+                    <span className="text-[11px] text-slate-400">Merender format KOP surat & e-Sign pejabat</span>
+                  </div>
+                )}
+
+                <iframe
+                  key={previewKey}
+                  src={api.getDocumentPdfUrl(doc.id)}
+                  onLoad={() => setIsPdfLoading(false)}
+                  className="w-full h-[760px] border-0"
+                  title={`Pratinjau Dokumen ${doc.number}`}
+                />
+              </div>
+
+              {/* PDF Footer Info */}
+              <div className="px-5 py-3 bg-slate-50/90 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Pratinjau memuat seluruh tanda tangan elektronik (e-Sign) pejabat yang telah memverifikasi secara langsung.</span>
+                </div>
+                <div className="font-mono text-[10px] text-slate-400 self-end sm:self-auto">
+                  Status: <strong>{doc.status?.toUpperCase()}</strong>
+                </div>
+              </div>
+            </section>
+          ) : (
+            /* === TAMPILAN RINCIAN FORMULIR & DAFTAR ASET === */
+            <>
+              {/* Bagian 1: Identitas Pemohon & Klasifikasi */}
+              <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
             <div className="border-l-4 border-[#0b2046] px-6 py-4 bg-white border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-[#0b2046] uppercase tracking-wider flex items-center gap-2">
                 <Building className="w-4 h-4 text-[#f05a22]" />
@@ -472,36 +665,38 @@ export default function PemusnahanReviewPage({ user }) {
                     {doc.requester_name || doc.requester?.name || 'Petugas Pengusul'}
                   </div>
                   <div className="text-xs text-slate-500 font-mono mt-0.5">
-                    NIP: {doc.requester_nip || doc.requester?.nip || '100001'}
+                    NIP: {doc.requester_nip || doc.requester?.nip || '-'}
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Unit Kerja & Wilayah</label>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Tanggal Pengajuan</label>
                   <div className="font-semibold text-slate-800 text-xs mt-0.5">
-                    {doc.requester_unit || (typeof doc.requester?.jabatan === 'object' ? doc.requester?.jabatan?.nama : doc.requester?.jabatan) || 'Unit Kantor Pusat'}
+                    {doc.data?.tanggal_permohonan
+                      ? new Date(doc.data.tanggal_permohonan).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+                      : new Date(doc.submitted_at || doc.created_at || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    Lokasi: {doc.data?.unit_kerja || doc.requester?.unit_kerja || 'DAOP 1 Jakarta'}
+                    Waktu: {new Date(doc.submitted_at || doc.created_at || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
                   </div>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Estimasi Nilai Buku Tercatat</label>
-                  <div className="font-extrabold text-[#0b2046] text-base mt-0.5">
-                    {doc.book_value || (doc.data?.nilai_buku ? `Rp ${Number(doc.data.nilai_buku).toLocaleString('id-ID')}` : 'Rp 148.500.000')}
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Unit Kerja & Wilayah</label>
+                  <div className="font-semibold text-slate-800 text-xs mt-0.5">
+                    {doc.data?.unit_kerja || doc.requester?.unit_kerja || 'Unit Kantor Pusat'}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Terhitung depresiasi buku aktiva SAP
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Jabatan: {doc.requester_unit || (typeof doc.requester?.jabatan === 'object' ? doc.requester?.jabatan?.nama : doc.requester?.jabatan) || 'Staff Pengusul'}
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Nomor Referensi Nota Dinas</label>
-                  <div className="font-mono text-xs font-semibold text-slate-700 mt-0.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                    {doc.data?.nomor_referensi || 'ND.TI/PUSAT/X/2026/0122 — Permohonan Afkir Server & Switch'}
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Nomor Dokumen</label>
+                  <div className="font-mono text-xs font-bold text-[#0b2046] mt-0.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200 inline-block">
+                    {doc.number || doc.nomor || `DOK-${doc.id}`}
                   </div>
                 </div>
               </div>
@@ -533,25 +728,32 @@ export default function PemusnahanReviewPage({ user }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {doc.items && doc.items.length > 0 ? (
-                    doc.items.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                          {item.id_aset || item.no_inventaris || `AST-KAI-${idx + 1}`}
-                        </td>
-                        <td className="py-3.5 px-4 font-extrabold text-[#0b2046]">
-                          {item.nama_aset || item.nama_barang || doc.category_label}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded">
-                            {item.jenis_aset || 'Fisik'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600">
-                          {item.alasan_pemusnahan || item.keterangan || 'Kerusakan fatal sistem & melewati batas usia pemakaian'}
-                        </td>
-                      </tr>
-                    ))
+                    doc.items.map((item, idx) => {
+                      const itemCode = item.id_aset || item.no_inventaris || item.code || item.snapshot_aset?.code || item.asset_snapshot?.code || `AST-KAI-${idx + 1}`;
+                      const itemName = item.nama_aset || item.nama_barang || item.name || item.snapshot_aset?.name || item.asset_snapshot?.name || doc.category_label || 'Aset TI';
+                      const itemType = item.jenis_aset || item.type || item.snapshot_aset?.type || item.asset_snapshot?.type || 'Fisik';
+                      const itemReason = item.alasan_pemusnahan || item.alasan || item.reason || item.keterangan || item.catatan || 'Kerusakan fatal sistem & melewati batas usia pemakaian';
+
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
+                            {itemCode}
+                          </td>
+                          <td className="py-3.5 px-4 font-extrabold text-[#0b2046]">
+                            {itemName}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded">
+                              {itemType}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600">
+                            {itemReason}
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td className="py-3.5 px-4 text-center text-slate-400 font-bold">1</td>
@@ -600,6 +802,8 @@ export default function PemusnahanReviewPage({ user }) {
               </span>
             </div>
           </section>
+            </>
+          )}
         </div>
 
         {/* === KOLOM KANAN (4/12 atau 5/12): STICKY WORKFLOW & ACTION PANEL === */}
@@ -800,6 +1004,44 @@ export default function PemusnahanReviewPage({ user }) {
                       </button>
                     </div>
                   </div>
+                ) : hasUserApproved ? (
+                  /* Verifikator telah selesai menyetujui tahapan ini */
+                  <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-4.5 space-y-3.5 shadow-xs">
+                    <div className="flex items-center gap-2 font-bold text-xs text-emerald-900">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Anda Telah Menyetujui Dokumen Ini</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800 leading-relaxed">
+                      Verifikasi dan tanda tangan digital Anda pada <strong>Tahap {userApprovalRecord?.step || 1}</strong> telah resmi tercatat di sistem. Tidak ada tindakan lanjutan yang perlu Anda lakukan.
+                    </p>
+                    {userApprovalRecord?.acted_at && (
+                      <div className="text-[10px] text-emerald-700 bg-white/80 border border-emerald-100 rounded-xl p-2.5 flex items-center gap-2 font-mono">
+                        <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Disetujui pada: {new Date(userApprovalRecord.acted_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                      </div>
+                    )}
+                    {(userApprovalRecord?.note || userApprovalRecord?.catatan) && (
+                      <div className="text-[11px] text-slate-700 bg-white border border-emerald-100 rounded-xl p-3 shadow-2xs">
+                        <span className="font-bold block text-slate-800 mb-1 text-[10px] uppercase tracking-wider">Catatan Disposisi Anda:</span>
+                        <p className="italic text-slate-600">"{userApprovalRecord.note || userApprovalRecord.catatan}"</p>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-emerald-200/60 text-[10px] text-emerald-800 flex items-center gap-1.5">
+                      <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin shrink-0" />
+                      <span>Saat ini sedang menunggu giliran <strong>{currentApproverName}</strong> ({sequentialSteps[currentActiveStep - 1]?.title}).</span>
+                    </div>
+                  </div>
+                ) : hasUserRejected ? (
+                  /* Verifikator telah menolak dokumen ini */
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4.5 space-y-2 text-rose-900">
+                    <div className="flex items-center gap-2 font-bold text-xs">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Anda Telah Menolak Dokumen Ini</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 leading-relaxed">
+                      Anda telah menolak permohonan ini pada Tahap {userRejectRecord?.step || 1}. Berkas pemusnahan dihentikan dan dikembalikan ke pemohon untuk revisi.
+                    </p>
+                  </div>
                 ) : (
                   <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
                     <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -983,6 +1225,53 @@ export default function PemusnahanReviewPage({ user }) {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === MODAL FULLSCREEN PREVIEW DOKUMEN PDF === */}
+      {isFullscreenPreview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex flex-col p-2 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full h-full flex flex-col shadow-2xl overflow-hidden border border-slate-700">
+            {/* Modal Topbar */}
+            <div className="bg-[#0b2046] text-white px-5 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-[#f05a22]" />
+                <div>
+                  <h3 className="text-sm font-bold">
+                    Pratinjau Dokumen Resmi &mdash; {doc.number || doc.nomor || `DOK-${doc.id}`}
+                  </h3>
+                  <p className="text-[11px] text-slate-300">Format cetak PDF SIPAKAI PT Kereta Api Indonesia (Persero)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  className="px-3 py-1.5 bg-[#f05a22] hover:bg-[#d44813] text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Unduh PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreenPreview(false)}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  title="Tutup Layar Penuh"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Iframe */}
+            <div className="flex-1 bg-slate-100 relative">
+              <iframe
+                src={api.getDocumentPdfUrl(doc.id)}
+                className="w-full h-full border-0"
+                title={`Fullscreen Pratinjau Dokumen ${doc.number}`}
+              />
             </div>
           </div>
         </div>
