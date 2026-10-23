@@ -69,14 +69,14 @@ export default function Sidebar({ activeMenu, onSelectMenu, currentRole }) {
                   <Trash2 className="w-4 h-4" />
                   <span>Pemusnahan & Penghapusan</span>
                 </div>
-                {openPemusnahan ? (
+                {openPemusnahan || activeMenu.startsWith('dsp') ? (
                   <ChevronDown className="w-4 h-4 text-white/80" />
                 ) : (
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 )}
               </button>
 
-              {openPemusnahan && (
+              {(openPemusnahan || activeMenu.startsWith('dsp')) && (
                 <div className="pl-6 pr-2 py-1.5 space-y-1 text-xs">
                   <button
                     type="button"

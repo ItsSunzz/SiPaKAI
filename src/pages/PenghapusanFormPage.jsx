@@ -169,22 +169,51 @@ export default function PenghapusanFormPage({ user }) {
   };
 
   const handleImportDSP02 = () => {
-    const imported = [
-      {
-        id: Date.now() + 1,
-        nama: 'Switch HP ProCurve 2520G 24-PoE',
-        spesifikasi: 'Core Switch Sub-Stasiun Manggarai',
-        jumlah: '2',
-        satuan: 'Unit',
-        serialNumber: 'SN-HP-9982-MGR',
-        noInventarisSap: 'AST-TI-2017-0419',
-        lokasiTerakhir: 'Ruang Server Manggarai Lt. 2',
+    const localSaved = JSON.parse(localStorage.getItem('sipakai_dsp02_docs') || '[]');
+    let imported = [];
+    if (localSaved.length > 0 && localSaved[0].items && localSaved[0].items.length > 0) {
+      imported = localSaved[0].items.map((it, idx) => ({
+        id: Date.now() + idx + 1,
+        nama: it.nama_aset || 'Aset TI Terkait',
+        spesifikasi: it.kategori || 'Perangkat Keras TI',
+        jumlah: String(it.jumlah || 1),
+        satuan: it.satuan || 'Unit',
+        serialNumber: it.serial_number || it.sn || `SN-${idx + 101}`,
+        noInventarisSap: it.no_inventaris || it.id_aset || `AST-TI-2018-091${idx}`,
+        lokasiTerakhir: localSaved[0].lokasi || 'Workshop Balai Yasa Manggarai',
         statusSap: 'Scrap (Nilai Buku Rp 0)',
         statusSapType: 'scrap'
-      }
-    ];
+      }));
+    } else {
+      imported = [
+        {
+          id: Date.now() + 1,
+          nama: 'Hard Disk Enterprise SAS 600GB (15k RPM)',
+          spesifikasi: 'Storage SAS Server Farm Juanda',
+          jumlah: '8',
+          satuan: 'Unit',
+          serialNumber: 'SN-WD-8812901-KAI',
+          noInventarisSap: 'AST-TI-2018-0912',
+          lokasiTerakhir: 'Workshop TI Balai Yasa Manggarai',
+          statusSap: 'Scrap (Nilai Buku Rp 0)',
+          statusSapType: 'scrap'
+        },
+        {
+          id: Date.now() + 2,
+          nama: 'Switch HP ProCurve 2520G 24-PoE',
+          spesifikasi: 'Core Switch Sub-Stasiun Manggarai',
+          jumlah: '2',
+          satuan: 'Unit',
+          serialNumber: 'SN-HP-9982-MGR',
+          noInventarisSap: 'AST-TI-2017-0419',
+          lokasiTerakhir: 'Ruang Server Manggarai Lt. 2',
+          statusSap: 'Scrap (Nilai Buku Rp 0)',
+          statusSapType: 'scrap'
+        }
+      ];
+    }
     setItems([...items, ...imported]);
-    setFeedbackMsg('1 item berhasil diimpor dari dokumen DSP-02 (Berita Acara)');
+    setFeedbackMsg(`${imported.length} item berhasil diimpor dari dokumen Berita Acara Pemusnahan (DSP-02)`);
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
@@ -221,9 +250,38 @@ export default function PenghapusanFormPage({ user }) {
         }))
       };
 
-      await api.createDocument(payload).catch(() => null);
-      alert(isDraft ? 'Draf Formulir Penghapusan Aset TI tersimpan.' : 'Formulir Penghapusan Aset TI [DSP-03] berhasil difinalisasi dan dicatat!');
-      navigate('/pemusnahan');
+      // Save to localStorage as persistent record
+      const currentSaved = JSON.parse(localStorage.getItem('sipakai_dsp03_docs') || '[]');
+      const newDocRecord = {
+        id: Date.now(),
+        number: `FR-PH/TI/DAOP1/10-2026/00${Math.floor(30 + Math.random() * 60)}`,
+        ref_ba: 'BA-PMS/TI/DAOP1/10-2026/0014',
+        type: 'dsp03',
+        form_code: 'FR.SM/TI/013.001',
+        tanggal,
+        pelaksana: {
+          nama: namaPelaksana,
+          nipp: nippPelaksana,
+          jabatan: jabatanPelaksana,
+          unit_kerja: user?.location || 'DAOP 1 Jakarta'
+        },
+        lokasi: lokasiEksekusi,
+        wilayah: 'DAOP 1 Jakarta',
+        klasifikasi: kondisi,
+        nilai_buku_total: 'Rp 0 (Scrap Nilai Penuh Disusutkan)',
+        sap_posting_status: isDraft ? 'Draf Rekonsiliasi' : 'Menunggu Validasi SAP',
+        status: isDraft ? 'draft' : 'pending',
+        status_label: isDraft ? 'Draf Formulir' : 'Menunggu Otorisasi VP IT',
+        items,
+        saksiList,
+        vpSigned
+      };
+      localStorage.setItem('sipakai_dsp03_docs', JSON.stringify([newDocRecord, ...currentSaved]));
+
+      setFeedbackMsg(isDraft ? 'Draf Formulir Penghapusan Aset TI tersimpan.' : 'Formulir Penghapusan Aset TI [DSP-03] berhasil difinalisasi dan dicatat!');
+      setTimeout(() => {
+        navigate('/penghapusan');
+      }, 1200);
     } catch (err) {
       alert('Gagal menyimpan dokumen: ' + err.message);
     } finally {
@@ -243,8 +301,21 @@ export default function PenghapusanFormPage({ user }) {
 
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-[#0b2046] tracking-tight">Formulir Penghapusan Aset TI</h1>
-        <p className="text-sm text-slate-500 mt-1 max-w-4xl leading-relaxed">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/penghapusan')}
+            className="p-2 bg-white hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors shadow-2xs"
+            title="Kembali ke Daftar Penghapusan"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-[#0b2046] tracking-tight">Formulir Penghapusan Aset TI</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Formulir resmi de-registrasi aktiva tetap dari registrasi TI SAP (DSP-03)</p>
+          </div>
+        </div>
+        <p className="text-sm text-slate-500 mt-2 max-w-4xl leading-relaxed">
           Formulir pencatatan akhir penghapusan aset TI dari buku inventaris aset tetap perusahaan yang membutuhkan validasi kondisi fisik/logis serta kehadiran saksi-saksi resmi unit pengawas internal dan keuangan.
         </p>
       </div>

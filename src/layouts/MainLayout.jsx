@@ -11,6 +11,7 @@ export default function MainLayout({ user, onLogout }) {
   const getActiveMenu = () => {
     if (location.pathname.startsWith('/pengaturan')) return 'pengaturan';
     if (location.pathname.startsWith('/penghapusan')) return 'dsp03';
+    if (location.pathname.startsWith('/berita-acara-pemusnahan') || location.pathname.startsWith('/pemusnahan/berita-acara') || location.pathname.startsWith('/dsp02')) return 'dsp02';
     if (location.pathname.startsWith('/pemusnahan')) return 'dsp01';
     if (location.pathname.startsWith('/bast-barang') || location.pathname.startsWith('/bast/barang')) return 'ho01';
     if (location.pathname.startsWith('/bast-aplikasi') || location.pathname.startsWith('/bast/aplikasi')) return 'ho02';
@@ -21,8 +22,8 @@ export default function MainLayout({ user, onLogout }) {
   const handleSelectMenu = (menu) => {
     if (menu === 'beranda') navigate('/');
     else if (menu === 'dsp01') navigate('/pemusnahan');
+    else if (menu === 'dsp02') navigate('/berita-acara-pemusnahan');
     else if (menu === 'dsp03') navigate('/penghapusan');
-    else if (menu === 'dsp02') navigate('/pemusnahan');
     else if (menu === 'ho01' || menu === 'bast-barang') navigate('/bast-barang');
     else if (menu === 'ho02' || menu === 'bast-aplikasi') navigate('/bast-aplikasi');
     else if (menu === 'pengaturan') navigate('/pengaturan');
