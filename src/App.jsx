@@ -6,7 +6,9 @@ import RegisterPage from './pages/RegisterPage'
 import GuestBookPage from './pages/GuestBookPage'
 import PemusnahanListPage from './pages/PemusnahanListPage'
 import PemusnahanFormPage from './pages/PemusnahanFormPage'
+import PenghapusanListPage from './pages/PenghapusanListPage'
 import PenghapusanFormPage from './pages/PenghapusanFormPage'
+import PenghapusanPreviewPage from './pages/PenghapusanPreviewPage'
 import PemusnahanReviewPage from './pages/PemusnahanReviewPage'
 import PengaturanPage from './pages/PengaturanPage'
 import BastBarangListPage from './pages/BastBarangListPage'
@@ -15,6 +17,9 @@ import BastPreviewPage from './pages/BastPreviewPage'
 import BastAplikasiListPage from './pages/BastAplikasiListPage'
 import BastAplikasiFormPage from './pages/BastAplikasiFormPage'
 import BastAplikasiPreviewPage from './pages/BastAplikasiPreviewPage'
+import BaPemusnahanListPage from './pages/BaPemusnahanListPage'
+import BaPemusnahanFormPage from './pages/BaPemusnahanFormPage'
+import BaPemusnahanPreviewPage from './pages/BaPemusnahanPreviewPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -170,6 +175,14 @@ function AppContent() {
   }
 
   const handleReviewDocument = (doc) => {
+    if (doc?.type === 'dsp03') {
+      window.location.href = `/penghapusan/${doc.id}`;
+      return;
+    }
+    if (doc?.type === 'dsp02') {
+      window.location.href = `/berita-acara-pemusnahan/${doc.id}`;
+      return;
+    }
     if (doc?.type === 'ho02') {
       window.location.href = `/bast-aplikasi/${doc.id}`;
       return;
@@ -182,6 +195,14 @@ function AppContent() {
   }
 
   const handleViewDocument = (doc) => {
+    if (doc?.type === 'dsp03') {
+      window.location.href = `/penghapusan/${doc.id}`;
+      return;
+    }
+    if (doc?.type === 'dsp02') {
+      window.location.href = `/berita-acara-pemusnahan/${doc.id}`;
+      return;
+    }
     if (doc?.type === 'ho02') {
       window.location.href = `/bast-aplikasi/${doc.id}`;
       return;
@@ -314,8 +335,28 @@ function AppContent() {
           <Route path="pemusnahan/:id/review" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/create" element={<PemusnahanFormPage user={userProfile} />} />
-          <Route path="penghapusan" element={<PenghapusanFormPage user={userProfile} />} />
+          {/* Berita Acara Pemusnahan (DSP-02) */}
+          <Route path="berita-acara-pemusnahan" element={<BaPemusnahanListPage user={userProfile} />} />
+          <Route path="berita-acara-pemusnahan/create" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="berita-acara-pemusnahan/:id/edit" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="berita-acara-pemusnahan/:id" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="berita-acara-pemusnahan/:id/review" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          {/* Aliases for Berita Acara Pemusnahan */}
+          <Route path="pemusnahan/berita-acara" element={<BaPemusnahanListPage user={userProfile} />} />
+          <Route path="pemusnahan/berita-acara/create" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="pemusnahan/berita-acara/:id" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="dsp02" element={<BaPemusnahanListPage user={userProfile} />} />
+          <Route path="dsp02/create" element={<BaPemusnahanFormPage user={userProfile} />} />
+          {/* Penghapusan Aset TI (DSP-03) */}
+          <Route path="penghapusan" element={<PenghapusanListPage user={userProfile} />} />
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="penghapusan/:id/edit" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="penghapusan/:id" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="penghapusan/:id/review" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          {/* Aliases for Penghapusan Aset TI */}
+          <Route path="dsp03" element={<PenghapusanListPage user={userProfile} />} />
+          <Route path="dsp03/create" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="dsp03/:id" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast-barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast-barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
