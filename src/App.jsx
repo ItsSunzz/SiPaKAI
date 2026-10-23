@@ -10,6 +10,9 @@ import PengaturanPage from './pages/PengaturanPage'
 import BastBarangListPage from './pages/BastBarangListPage'
 import BastBarangFormPage from './pages/BastBarangFormPage'
 import BastPreviewPage from './pages/BastPreviewPage'
+import BastAplikasiListPage from './pages/BastAplikasiListPage'
+import BastAplikasiFormPage from './pages/BastAplikasiFormPage'
+import BastAplikasiPreviewPage from './pages/BastAplikasiPreviewPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -153,7 +156,11 @@ export default function App() {
   }
 
   const handleReviewDocument = (doc) => {
-    if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+    if (doc?.type === 'ho02') {
+      window.location.href = `/bast-aplikasi/${doc.id}`;
+      return;
+    }
+    if (doc?.type === 'ho01' || doc?.category_type === 'bast') {
       window.location.href = `/bast-barang/${doc.id}`;
       return;
     }
@@ -161,7 +168,11 @@ export default function App() {
   }
 
   const handleViewDocument = (doc) => {
-    if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+    if (doc?.type === 'ho02') {
+      window.location.href = `/bast-aplikasi/${doc.id}`;
+      return;
+    }
+    if (doc?.type === 'ho01' || doc?.category_type === 'bast') {
       window.location.href = `/bast-barang/${doc.id}`;
       return;
     }
@@ -240,6 +251,15 @@ export default function App() {
           <Route path="bast/barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast/barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast/barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast-aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
+          <Route path="bast-aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast-aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast-aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast-aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast/aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
+          <Route path="bast/aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast/aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast/aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>

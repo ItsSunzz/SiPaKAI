@@ -17,6 +17,8 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
       navigate('/pemusnahan');
     } else if (moduleId === 'ho01') {
       navigate('/bast-barang');
+    } else if (moduleId === 'ho02') {
+      navigate('/bast-aplikasi');
     } else {
       handleOpenModule(moduleId);
     }
@@ -25,7 +27,9 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
   const onReview = (doc) => {
     if (doc?.type?.startsWith('dsp') || doc?.category_type === 'pemusnahan') {
       navigate(`/pemusnahan/${doc.id}/review`);
-    } else if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+    } else if (doc?.type === 'ho02') {
+      navigate(`/bast-aplikasi/${doc.id}`);
+    } else if (doc?.type === 'ho01' || doc?.category_type === 'bast') {
       navigate(`/bast-barang/${doc.id}`);
     } else if (handleReviewDocument) {
       handleReviewDocument(doc);
@@ -35,7 +39,9 @@ export default function DashboardPage({ user, documents, isLoading, loadDocument
   const onView = (doc) => {
     if (doc?.type?.startsWith('dsp') || doc?.category_type === 'pemusnahan') {
       navigate(`/pemusnahan/${doc.id}/review`);
-    } else if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') {
+    } else if (doc?.type === 'ho02') {
+      navigate(`/bast-aplikasi/${doc.id}`);
+    } else if (doc?.type === 'ho01' || doc?.category_type === 'bast') {
       navigate(`/bast-barang/${doc.id}`);
     } else if (handleViewDocument) {
       handleViewDocument(doc);

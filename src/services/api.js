@@ -43,6 +43,20 @@ export const fallbackDocuments = [
     status: 'in_review',
     status_label: 'Menunggu Disposisi VP',
   },
+  {
+    id: 201,
+    number: 'FR.SM/TI/011.002/10-2026/0012',
+    inventory_code: 'User SAP & Sirsak',
+    type: 'ho02',
+    category_label: 'BAST User Aplikasi (HO-02)',
+    category_type: 'bast',
+    requester_name: 'Ahmad Fauzi Setiawan',
+    requester_unit: 'Spv Operasional Infrastruktur TI',
+    date: '18 Okt 2026',
+    book_value: 'Hak Akses Sistem',
+    status: 'pending',
+    status_label: 'Menunggu Tanda Tangan Penerima',
+  },
 ]
 
 export function getToken() {
@@ -257,6 +271,30 @@ export const api = {
     return request(`/documents/${id}/sign`, {
       method: 'POST',
       body: { signature_pin: signaturePin },
+    })
+  },
+
+  // Notifikasi
+  async getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/notifications${query ? `?${query}` : ''}`)
+  },
+
+  async markNotificationAsRead(id) {
+    return request(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    })
+  },
+
+  async markAllNotificationsAsRead() {
+    return request('/notifications/read-all', {
+      method: 'POST',
+    })
+  },
+
+  async deleteNotification(id) {
+    return request(`/notifications/${id}`, {
+      method: 'DELETE',
     })
   },
 }
