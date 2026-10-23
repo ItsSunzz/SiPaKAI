@@ -24,6 +24,7 @@ export default function MainLayout({ user, onLogout }) {
     else if (menu === 'dsp03') navigate('/penghapusan');
     else if (menu === 'dsp02') navigate('/pemusnahan');
     else if (menu === 'ho01' || menu === 'bast-barang') navigate('/bast-barang');
+    else if (menu === 'ho02' || menu === 'bast-aplikasi') navigate('/bast-aplikasi');
     else if (menu === 'pengaturan') navigate('/pengaturan');
     else alert('Menu ini belum diimplementasikan di versi routing baru.');
   };
