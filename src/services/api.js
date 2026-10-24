@@ -205,13 +205,9 @@ export const api = {
   },
 
   // Approvers list
-  async getApprovers() {
-    return request('/approvers')
-  },
-
-  // Profile & Digital Signature
-  async getProfile() {
-    return request('/profile')
+  async getApprovers(params = '') {
+    const q = params ? (params.startsWith('?') ? params : '?' + params) : '';
+    return request('/approvers' + q);
   },
 
   async updateProfile(data) {

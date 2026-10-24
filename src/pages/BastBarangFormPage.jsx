@@ -222,7 +222,7 @@ export default function BastBarangFormPage({ user }) {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        const res = await api.getApprovers().catch(() => null);
+        const res = await api.getApprovers('all=1').catch(() => null);
         const list = Array.isArray(res) ? res : (res?.data || []);
         setApiUsers(list);
 
@@ -1079,11 +1079,36 @@ export default function BastBarangFormPage({ user }) {
                     <label className="font-semibold text-slate-700 block mb-1">NIPP Penerima *</label>
                     <input
                       type="text"
+                      list="penerima-nipp-suggestions"
                       value={penerima.nipp}
-                      onChange={(e) => setPenerima({ ...penerima, nipp: e.target.value })}
-                      placeholder="P002"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const found = allPegawai.find(
+                          (p) => p.nipp && p.nipp.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        if (found) {
+                          setPenerima({
+                            nama: found.nama,
+                            nipp: found.nipp,
+                            jabatan: found.jabatan,
+                            tempat_kedudukan: found.tempat_kedudukan,
+                            personal_area: found.personal_area || 'PA02',
+                          });
+                          if (found.id) setPenyerahUserId(Number(found.id));
+                        } else {
+                          setPenerima({ ...penerima, nipp: val });
+                        }
+                      }}
+                      placeholder="Ketik NIPP (misal: P002)..."
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono font-bold focus:ring-1 focus:ring-[#f05a22] focus:outline-none"
                     />
+                    <datalist id="penerima-nipp-suggestions">
+                      {allPegawai.map((p) => (
+                        <option key={p.id || p.nipp} value={p.nipp}>
+                          {p.nama} - {p.jabatan}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Jabatan Penerima *</label>
@@ -1120,35 +1145,20 @@ export default function BastBarangFormPage({ user }) {
                   </div>
                 </div>
 
-                {/* Target Penandatangan Kedua Selector */}
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Akun Pihak Penandatangan Kedua (`penyerah_user_id`) *
-                  </label>
-                  <select
-                    value={penyerahUserId}
-                    onChange={(e) => setPenyerahUserId(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-medium text-xs focus:ring-1 focus:ring-[#f05a22] focus:outline-none"
-                  >
-                    {allPegawai.map((p) => (
-                      <option key={p.id || p.nipp} value={p.id || 25}>
-                        {p.nama} [NIPP: {p.nipp}] — ID Akun: #{p.id || 25}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Pihak ini yang akan menerima dokumen dan melakukan tanda tangan kedua via endpoint <code>/api/documents/{'{id}'}/sign</code>.
-                  </p>
-                </div>
-              </div>
+                              </div>
             </div>
 
-            <div className="bg-slate-50/80 border-t border-slate-100 px-4 py-2.5 flex items-center justify-between text-[11px] text-slate-500">
-              <span className="font-medium text-amber-700">Penandatangan Kedua Aktif</span>
-              <span className="font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs font-mono">
-                ID: #{penyerahUserId}
-              </span>
-            </div>
+            {penyerahUserId ? (
+              <div className="bg-emerald-50/80 border-t border-emerald-100 px-4 py-2.5 flex items-center justify-between text-[11px] text-emerald-800">
+                <span className="font-medium flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                  Penerima Terhubung Otomatis: <strong>{penerima.nama || 'Pegawai'}</strong> (NIPP: {penerima.nipp})
+                </span>
+                <span className="font-semibold text-emerald-700 bg-white border border-emerald-200 px-2 py-0.5 rounded shadow-2xs font-mono text-[10px]">
+                  User ID: #{penyerahUserId}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
