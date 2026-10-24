@@ -532,6 +532,19 @@ export default function BastAplikasiListPage({ user }) {
                             <FileText className="w-4 h-4" />
                           </button>
 
+                          {/* Unduh PDF Resmi (ho02.blade.php) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = api.getDocumentPdfUrl(doc.id);
+                              window.open(url, '_blank');
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-[#003580] hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Unduh PDF Resmi"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+
                           {/* Tanda Tangan jika pending */}
                           {isPending && (
                             <button

@@ -38,9 +38,8 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  // Tab view: 'sheet' (Lembar Resmi Fisik KAI A4) | 'detail' (Ringkasan & Keamanan)
-  const [activeTab, setActiveTab] = useState('sheet');
-  const [activePage, setActivePage] = useState(1); // 1 | 2 for A4 sheet pages
+  // Tab view: 'pdf' (Pratinjau PDF Asli Backend ho02.blade.php) | 'detail' (Rincian & Tanda Tangan)
+  const [activeTab, setActiveTab] = useState('pdf');
 
   // Password reveal toggle in accounts table
   const [revealedPasswords, setRevealedPasswords] = useState({});
@@ -295,6 +294,14 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const keperluan = data.keperluan || 'Akses otorisasi persetujuan operasional harian dinas.';
   const masaAktif = data.masa_aktif || { mulai: '2026-10-18', selesai: '2027-10-18' };
 
+  const handleDownloadPdf = () => {
+    if (!doc?.id) return;
+    const url = api.getDocumentPdfUrl(doc.id);
+    window.open(url, '_blank');
+  };
+
+  const pdfUrl = doc?.id ? api.getDocumentPdfUrl(doc.id) : '';
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 pb-28 select-none">
       {/* Top Breadcrumb & Title */}
@@ -322,31 +329,43 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
         </div>
 
         {/* View Tabs & Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
             <button
               type="button"
-              onClick={() => setActiveTab('sheet')}
-              className={`px-3.5 py-1.5 rounded-lg transition-all ${activeTab === 'sheet' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+              onClick={() => setActiveTab('pdf')}
+              className={`px-3.5 py-1.5 rounded-lg transition-all ${activeTab === 'pdf' ? 'bg-white text-[#003580] shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
             >
-              Lembar Resmi A4 (Cetak)
+              Pratinjau PDF A4 (ho02.blade.php)
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('detail')}
               className={`px-3.5 py-1.5 rounded-lg transition-all ${activeTab === 'detail' ? 'bg-white text-[#003580] shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
             >
-              Rincian Kredensial & Audit
+              Rincian Kredensial & TTD
             </button>
           </div>
 
+          {isDraft && (
+            <button
+              type="button"
+              onClick={() => navigate(`/bast-aplikasi/${id}/edit`)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors shadow-2xs"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Draf</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            title="Unduh PDF Resmi dari template backend ho02.blade.php"
           >
-            <Printer className="w-4 h-4 text-sky-400" />
-            <span>Cetak Dokumen</span>
+            <Download className="w-4 h-4 text-sky-400" />
+            <span>Unduh PDF</span>
           </button>
         </div>
       </div>
@@ -359,6 +378,19 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
             <span>{successMessage}</span>
           </div>
           <button type="button" onClick={() => setSuccessMessage(null)} className="text-emerald-700 hover:text-emerald-950">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Error Notification */}
+      {errorMessage && (
+        <div className="p-4 bg-rose-50 border border-rose-300 text-rose-900 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button type="button" onClick={() => setErrorMessage(null)} className="text-rose-700 hover:text-rose-950">
             ✕
           </button>
         </div>
@@ -541,7 +573,29 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
       )}
 
       {/* MAIN VIEW AREA */}
-      {activeTab === 'sheet' ? (
+      {activeTab === 'pdf' ? (
+        /* LEMBAR PRATINJAU PDF ASLI DARI BACKEND ho02.blade.php */
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[85vh]">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs font-semibold text-slate-600">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#003580]" />
+              <span>Pratinjau Dokumen PDF Resmi Backend (Template: resources/views/pdf/ho02.blade.php)</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="text-[#003580] hover:underline flex items-center gap-1 font-bold cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" /> Buka / Simpan File PDF Asli
+            </button>
+          </div>
+          <iframe
+            src={pdfUrl}
+            title="BAST User Aplikasi PDF Sheet"
+            className="w-full flex-1 border-0"
+          />
+        </div>
+      ) : activeTab === 'sheet' ? (
         /* LEMBAR CETAK STANDAR A4 FORMULIR RESMI KAI */
         <div className="bg-slate-200 p-4 md:p-8 rounded-2xl flex flex-col items-center shadow-inner">
           {/* Page Switcher */}
