@@ -110,10 +110,11 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
         });
         setDocuments(mapped);
       } else {
-        setDocuments(fallbackDocuments.filter(d => d.type === 'dsp01' || d.type === 'dsp02' || d.type === 'dsp03'));
+        setDocuments([]);
       }
-    } catch {
-      setDocuments(fallbackDocuments.filter(d => d.type === 'dsp01' || d.type === 'dsp02' || d.type === 'dsp03'));
+    } catch (err) {
+      console.error('Gagal memuat dokumen DSP-01 dari backend:', err);
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }

@@ -173,10 +173,11 @@ export default function BastAplikasiListPage({ user }) {
         }));
         setDocuments(mapped);
       } else {
-        setDocuments(sampleAplikasiDocs);
+        setDocuments([]);
       }
     } catch (e) {
-      setDocuments(sampleAplikasiDocs);
+      console.error('Gagal memuat dokumen BAST Aplikasi HO-02 dari backend:', e);
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }
