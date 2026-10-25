@@ -101,10 +101,10 @@ function AppContent() {
         }))
         setDocuments(mapped)
       } else {
-        setDocuments(fallbackDocuments)
+        setDocuments([])
       }
     } catch {
-      setDocuments(fallbackDocuments)
+      setDocuments([])
     } finally {
       setIsLoading(false)
     }

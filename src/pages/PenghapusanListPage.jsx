@@ -237,20 +237,11 @@ export default function PenghapusanListPage({ user }) {
         }));
         setDocuments(mapped);
       } else {
-        const localSaved = localStorage.getItem('sipakai_dsp03_docs');
-        if (localSaved) {
-          try {
-            const parsed = JSON.parse(localSaved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setDocuments(parsed);
-              return;
-            }
-          } catch (e) {}
-        }
-        setDocuments(samplePenghapusanDocs);
+        setDocuments([]);
       }
     } catch (e) {
-      setDocuments(samplePenghapusanDocs);
+      console.error('Gagal memuat dokumen DSP-03 dari backend:', e);
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }

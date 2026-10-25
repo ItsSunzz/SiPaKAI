@@ -192,22 +192,13 @@ export default function BastBarangListPage({ user }) {
           };
         });
 
-        // If user created docs, put them at the top, merge with samples if count is small for preview
-        if (mapped.length < 5) {
-          // Merge keeping mapped IDs unique
-          const existingIds = new Set(mapped.map(m => String(m.id)));
-          const extraSamples = sampleBastDocuments.filter(s => !existingIds.has(String(s.id)));
-          setDocuments([...mapped, ...extraSamples]);
-        } else {
-          setDocuments(mapped);
-        }
+        setDocuments(mapped);
       } else {
-        // Load fallback samples matching screenshot
-        setDocuments(sampleBastDocuments);
+        setDocuments([]);
       }
     } catch (err) {
-      console.warn('Error fetching BAST documents, using sample fallback:', err);
-      setDocuments(sampleBastDocuments);
+      console.error('Gagal memuat dokumen BAST HO-01 dari backend:', err);
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }
