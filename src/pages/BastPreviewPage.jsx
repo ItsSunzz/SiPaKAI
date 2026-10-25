@@ -27,6 +27,7 @@ import {
   FileImage
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+import SignatureSelector from '../components/SignatureSelector';
 
 export default function BastPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -274,45 +275,52 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
 
     setIsSigning(true);
     try {
-      // 0. Sinkronisasi TTD (Upload PNG atau Hasil Canvas) ke Backend Profile User
-      if (signatureMode === 'upload') {
-        if (!selectedSignatureFile && !hasServerSignature) {
-          setSignError('Silakan pilih file tanda tangan PNG / gambar terlebih dahulu.');
+      // 0. Validasi ketat tanda tangan tidak boleh kosong sesuai opsi
+      if (signatureMode === 'draw') {
+        if (!hasDrawnSignature) {
+          setSignError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
           setIsSigning(false);
           return;
         }
-        if (selectedSignatureFile) {
-          try {
+      } else if (signatureMode === 'upload') {
+        if (!selectedSignatureFile) {
+          setSignError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
+          setIsSigning(false);
+          return;
+        }
+      } else if (signatureMode === 'saved') {
+        if (!hasServerSignature) {
+          setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
+          setIsSigning(false);
+          return;
+        }
+      }
+
+      // Sinkronisasi berkas tanda tangan baru (goresan atau upload) ke backend profil pengguna
+      if (signatureMode === 'upload' && selectedSignatureFile) {
+        try {
+          const formData = new FormData();
+          formData.append('signature', selectedSignatureFile);
+          formData.append('pin', pinInput.trim());
+          await api.uploadSignature(formData);
+          setHasServerSignature(true);
+        } catch (uploadErr) {
+          console.warn('Gagal upload tanda tangan PNG:', uploadErr);
+        }
+      } else if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
+        try {
+          const blob = await new Promise((resolve) => {
+            canvasRef.current.toBlob(resolve, 'image/png');
+          });
+          if (blob) {
             const formData = new FormData();
-            formData.append('signature', selectedSignatureFile);
+            formData.append('signature', blob, 'signature_draw.png');
             formData.append('pin', pinInput.trim());
             await api.uploadSignature(formData);
             setHasServerSignature(true);
-          } catch (uploadErr) {
-            console.warn('Gagal upload tanda tangan PNG:', uploadErr);
           }
-        }
-      } else if (signatureMode === 'draw') {
-        if (!hasDrawnSignature && !hasServerSignature) {
-          setSignError('Silakan goreskan tanda tangan pada bidang canvas.');
-          setIsSigning(false);
-          return;
-        }
-        if (hasDrawnSignature && canvasRef.current) {
-          try {
-            const blob = await new Promise((resolve) => {
-              canvasRef.current.toBlob(resolve, 'image/png');
-            });
-            if (blob) {
-              const formData = new FormData();
-              formData.append('signature', blob, 'signature.png');
-              formData.append('pin', pinInput.trim());
-              await api.uploadSignature(formData);
-              setHasServerSignature(true);
-            }
-          } catch (uploadErr) {
-            console.warn('Gagal sinkronisasi tanda tangan goresan:', uploadErr);
-          }
+        } catch (uploadErr) {
+          console.warn('Gagal sinkronisasi tanda tangan goresan:', uploadErr);
         }
       }
 
@@ -902,152 +910,19 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
                   </p>
                 </div>
 
-                {/* Signature View / Drawing */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="font-bold text-slate-800 block">
-                      Tanda Tangan Digital Anda
-                    </label>
-                    <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-semibold">
-                      {hasServerSignature && (
-                        <button
-                          type="button"
-                          onClick={() => setSignatureMode('saved')}
-                          className={`px-2 py-0.5 rounded-md transition-all ${
-                            signatureMode === 'saved'
-                              ? 'bg-white text-[#f05a22] shadow-2xs font-bold'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          Tanda Tangan Akun
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setSignatureMode('draw')}
-                        className={`px-2 py-0.5 rounded-md transition-all ${
-                          signatureMode === 'draw'
-                            ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        Goreskan Langsung
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSignatureMode('upload')}
-                        className={`px-2 py-0.5 rounded-md transition-all ${
-                          signatureMode === 'upload'
-                            ? 'bg-white text-[#f05a22] shadow-2xs font-bold'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        Unggah File PNG
-                      </button>
-                    </div>
-                  </div>
-
-                  {signatureMode === 'saved' && hasServerSignature && (
-                    <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-center h-28">
-                      <div className="text-center">
-                        <img
-                          src={serverSignatureUrl}
-                          alt="Signature Profile"
-                          className="h-20 max-w-full object-contain mx-auto"
-                        />
-                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">
-                          ✓ Tanda tangan digital resmi profil akun Anda siap dibubuhkan
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {signatureMode === 'draw' && (
-                    <div>
-                      <div className="relative border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-white transition-colors overflow-hidden group">
-                        <canvas
-                          ref={canvasRef}
-                          width={600}
-                          height={140}
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
-                          className="w-full h-32 cursor-crosshair touch-none"
-                        />
-                        {!hasDrawnSignature && (
-                          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center text-slate-400 gap-1">
-                            <PenTool className="w-4 h-4 text-slate-300" />
-                            <span className="text-[11px] font-medium">
-                              Goreskan tanda tangan digital di kotak ini
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-[10px] text-slate-400">
-                          {hasDrawnSignature ? '✓ Tanda tangan tergores' : 'Goreskan tanda tangan'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleClearSignature}
-                          className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 font-semibold py-0.5 px-2 rounded hover:bg-rose-50"
-                        >
-                          <Eraser className="w-3 h-3" />
-                          Hapus / Ulangi
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {signatureMode === 'upload' && (
-                    <div>
-                      {signatureFilePreview ? (
-                        <div className="border-2 border-emerald-300 bg-emerald-50/40 rounded-xl p-3 flex flex-col items-center justify-center">
-                          <img
-                            src={signatureFilePreview}
-                            alt="Preview TTD"
-                            className="max-h-24 max-w-full object-contain mx-auto bg-white/70 p-2 rounded border border-emerald-200"
-                          />
-                          <div className="flex items-center justify-between w-full mt-2 pt-2 border-t border-emerald-200">
-                            <span className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              {selectedSignatureFile?.name || 'File TTD siap digunakan'}
-                            </span>
-                            <label className="text-[10px] text-blue-600 hover:underline cursor-pointer font-semibold">
-                              Ganti Gambar
-                              <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/webp"
-                                onChange={handleSignatureFileChange}
-                                className="hidden"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ) : (
-                        <label className="border-2 border-dashed border-slate-300 hover:border-[#f05a22] rounded-xl p-4 bg-slate-50 hover:bg-orange-50/20 transition-all flex flex-col items-center justify-center cursor-pointer text-center group">
-                          <Upload className="w-6 h-6 text-slate-400 group-hover:text-[#f05a22] transition-colors mb-1" />
-                          <span className="text-xs font-semibold text-slate-700 group-hover:text-[#f05a22]">
-                            Klik untuk unggah file TTD (PNG / Gambar)
-                          </span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">
-                            Format PNG transparan disarankan (Maksimal 2MB)
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            onChange={handleSignatureFileChange}
-                            className="hidden"
-                          />
-                        </label>
-                      )}
-                    </div>
-                  )}
-                </div>
+                {/* Komponen Pemilih Tanda Tangan: 3 Opsi dengan Validasi Ketat */}
+                <SignatureSelector
+                  mode={signatureMode}
+                  setMode={setSignatureMode}
+                  canvasRef={canvasRef}
+                  hasDrawn={hasDrawnSignature}
+                  setHasDrawn={setHasDrawnSignature}
+                  selectedFile={selectedSignatureFile}
+                  setSelectedFile={setSelectedSignatureFile}
+                  hasServerSignature={hasServerSignature}
+                  serverSignatureUrl={serverSignatureUrl}
+                  user={user}
+                />
 
                 {/* Agreement Checkbox */}
                 <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">

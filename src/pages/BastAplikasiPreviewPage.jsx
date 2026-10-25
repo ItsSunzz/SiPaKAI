@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
+import SignatureSelector from '../components/SignatureSelector';
 
 export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -51,11 +52,25 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState(null);
 
-  // Canvas TTD Penerima
+  // Canvas TTD Penerima & Signature Mode (3 Pilihan: draw | upload | saved)
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
-  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'profile'
+  const [selectedSignatureFile, setSelectedSignatureFile] = useState(null);
+  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'upload' | 'saved'
+  const [hasServerSignature, setHasServerSignature] = useState(false);
+  const [serverSignatureUrl, setServerSignatureUrl] = useState('');
+
+  // Sinkronisasi status tanda tangan profil user saat ini
+  useEffect(() => {
+    if (user?.has_signature || user?.signature_path) {
+      setHasServerSignature(true);
+      setServerSignatureUrl(api.getSignatureUrl(true));
+      setSignatureMode('saved');
+    } else {
+      setSignatureMode('draw');
+    }
+  }, [user]);
 
   const togglePasswordReveal = (idx) => {
     setRevealedPasswords((prev) => ({
@@ -201,9 +216,56 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
       setSignError('Harap masukkan PIN Otorisasi tanda tangan digital Anda.');
       return;
     }
+
+    // Validasi ketat tanda tangan tidak boleh kosong sesuai opsi yang dipilih
+    if (signatureMode === 'draw') {
+      if (!hasDrawnSignature) {
+        setSignError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'upload') {
+      if (!selectedSignatureFile) {
+        setSignError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'saved') {
+      if (!hasServerSignature) {
+        setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
+        return;
+      }
+    }
+
     setSignError(null);
     setIsSigning(true);
     try {
+      // 1. Sinkronisasi berkas tanda tangan baru (goresan atau upload) ke backend profil pengguna
+      if (signatureMode === 'upload' && selectedSignatureFile) {
+        try {
+          const formData = new FormData();
+          formData.append('signature', selectedSignatureFile);
+          formData.append('pin', pinInput.trim());
+          await api.uploadSignature(formData);
+          setHasServerSignature(true);
+        } catch (uploadErr) {
+          console.warn('Gagal upload tanda tangan PNG:', uploadErr);
+        }
+      } else if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
+        try {
+          const blob = await new Promise((resolve) => {
+            canvasRef.current.toBlob(resolve, 'image/png');
+          });
+          if (blob) {
+            const formData = new FormData();
+            formData.append('signature', blob, 'signature_draw.png');
+            formData.append('pin', pinInput.trim());
+            await api.uploadSignature(formData);
+            setHasServerSignature(true);
+          }
+        } catch (uploadErr) {
+          console.warn('Gagal sinkronisasi tanda tangan goresan:', uploadErr);
+        }
+      }
+
       await api.signDocument(id, pinInput).catch(() => null);
       setDoc((prev) => ({
         ...prev,
@@ -496,42 +558,19 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
               </p>
             </div>
 
-            {/* Canvas Tanda Tangan */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800">
-                  Goreskan Tanda Tangan Pihak Penerima ({penerima.nama}):
-                </span>
-                <button
-                  type="button"
-                  onClick={clearCanvas}
-                  className="text-[10px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1"
-                >
-                  <Eraser className="w-3 h-3" /> Bersihkan
-                </button>
-              </div>
-
-              <div className="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 relative overflow-hidden">
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={120}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                  className="w-full h-28 cursor-crosshair block"
-                />
-                {!hasDrawnSignature && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-400 text-[11px]">
-                    Goreskan tanda tangan penerima di area ini
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Komponen Pemilih Tanda Tangan: 3 Opsi dengan Validasi Ketat */}
+            <SignatureSelector
+              mode={signatureMode}
+              setMode={setSignatureMode}
+              canvasRef={canvasRef}
+              hasDrawn={hasDrawnSignature}
+              setHasDrawn={setHasDrawnSignature}
+              selectedFile={selectedSignatureFile}
+              setSelectedFile={setSelectedSignatureFile}
+              hasServerSignature={hasServerSignature}
+              serverSignatureUrl={serverSignatureUrl}
+              user={user}
+            />
 
             {/* Agreement Checkbox */}
             <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">

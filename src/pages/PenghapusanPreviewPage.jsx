@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
+import SignatureSelector from '../components/SignatureSelector';
 
 export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -44,10 +45,25 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState(null);
 
-  // Canvas TTD
+  // Canvas TTD & Signature Mode (3 Pilihan: draw | upload | saved)
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [selectedSignatureFile, setSelectedSignatureFile] = useState(null);
+  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'upload' | 'saved'
+  const [hasServerSignature, setHasServerSignature] = useState(false);
+  const [serverSignatureUrl, setServerSignatureUrl] = useState('');
+
+  // Sinkronisasi status tanda tangan profil user saat ini
+  useEffect(() => {
+    if (user?.has_signature || user?.signature_path) {
+      setHasServerSignature(true);
+      setServerSignatureUrl(api.getSignatureUrl(true));
+      setSignatureMode('saved');
+    } else {
+      setSignatureMode('draw');
+    }
+  }, [user]);
 
   // Fallback sample DSP-03
   const sampleFallbackDoc = {
@@ -241,10 +257,56 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
       return;
     }
 
+    // Validasi ketat tanda tangan tidak boleh kosong sesuai opsi yang dipilih
+    if (signatureMode === 'draw') {
+      if (!hasDrawnSignature) {
+        setSignError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'upload') {
+      if (!selectedSignatureFile) {
+        setSignError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'saved') {
+      if (!hasServerSignature) {
+        setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
+        return;
+      }
+    }
+
     setIsSigning(true);
     setSignError(null);
 
     try {
+      // 1. Sinkronisasi berkas tanda tangan baru (goresan atau upload) ke backend profil pengguna
+      if (signatureMode === 'upload' && selectedSignatureFile) {
+        try {
+          const formData = new FormData();
+          formData.append('signature', selectedSignatureFile);
+          formData.append('pin', pinInput.trim());
+          await api.uploadSignature(formData);
+          setHasServerSignature(true);
+        } catch (uploadErr) {
+          console.warn('Gagal upload tanda tangan PNG:', uploadErr);
+        }
+      } else if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
+        try {
+          const blob = await new Promise((resolve) => {
+            canvasRef.current.toBlob(resolve, 'image/png');
+          });
+          if (blob) {
+            const formData = new FormData();
+            formData.append('signature', blob, 'signature_draw.png');
+            formData.append('pin', pinInput.trim());
+            await api.uploadSignature(formData);
+            setHasServerSignature(true);
+          }
+        } catch (uploadErr) {
+          console.warn('Gagal sinkronisasi tanda tangan goresan:', uploadErr);
+        }
+      }
+
       await new Promise(r => setTimeout(r, 900));
 
       const updatedDoc = {
@@ -628,36 +690,19 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
               </div>
             )}
 
-            {/* Canvas */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800">Bubuhkan Tanda Tangan:</label>
-                <button
-                  type="button"
-                  onClick={clearCanvas}
-                  className="text-[11px] text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1"
-                >
-                  <Eraser className="w-3.5 h-3.5" />
-                  <span>Hapus</span>
-                </button>
-              </div>
-
-              <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50 touch-none">
-                <canvas
-                  ref={canvasRef}
-                  width={440}
-                  height={140}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                  className="w-full h-36 cursor-crosshair bg-white"
-                />
-              </div>
-            </div>
+            {/* Komponen Pemilih Tanda Tangan: 3 Opsi dengan Validasi Ketat */}
+            <SignatureSelector
+              mode={signatureMode}
+              setMode={setSignatureMode}
+              canvasRef={canvasRef}
+              hasDrawn={hasDrawnSignature}
+              setHasDrawn={setHasDrawnSignature}
+              selectedFile={selectedSignatureFile}
+              setSelectedFile={setSelectedSignatureFile}
+              hasServerSignature={hasServerSignature}
+              serverSignatureUrl={serverSignatureUrl}
+              user={user}
+            />
 
             {/* PIN Input */}
             <div className="space-y-1.5">

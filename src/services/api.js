@@ -217,6 +217,22 @@ export const api = {
     return await res.blob();
   },
 
+  async getDocumentPdfBlob(id) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/pdf?inline=1&_t=${Date.now()}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Gagal memuat PDF dokumen resmi dari server.');
+    }
+    return await res.blob();
+  },
+
   getDocumentPdfUrl(id, inline = true) {
     const token = getToken();
     const inlineParam = inline ? '&inline=1' : '';
