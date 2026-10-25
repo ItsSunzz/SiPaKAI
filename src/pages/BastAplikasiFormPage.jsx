@@ -123,9 +123,13 @@ export default function BastAplikasiFormPage({ user }) {
           penyerah,
           penerima,
           keperluan,
-          masa_aktif: masaAktif,
-          masa_aktif_mulai: masaAktif?.mulai,
-          masa_aktif_sampai: masaAktif?.sampai,
+          masa_aktif_mulai: masaAktif.mulai,
+          masa_aktif_sampai: masaAktif.sampai || masaAktif.selesai,
+          masa_aktif: {
+            mulai: masaAktif.mulai,
+            sampai: masaAktif.sampai || masaAktif.selesai,
+            selesai: masaAktif.selesai || masaAktif.sampai,
+          },
         },
         items: accounts.map((acc) => ({
           nama_aplikasi: acc.nama_aplikasi,
@@ -220,6 +224,7 @@ export default function BastAplikasiFormPage({ user }) {
   // 6. Masa Aktif User
   const [masaAktif, setMasaAktif] = useState({
     mulai: new Date().toISOString().split('T')[0],
+    sampai: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     selesai: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
 
@@ -354,6 +359,14 @@ export default function BastAplikasiFormPage({ user }) {
         type: 'ho02',
         title: `BAST User Aplikasi - ${penerima.nama}`,
         status: asDraft ? 'draft' : 'pending',
+        submit: !asDraft,
+        approver_nip: penerima.nipp || penerima.nipp_identitas,
+        signature_pin: !asDraft ? signaturePin.trim() : null,
+        items: accounts.map(a => ({
+          nama_aplikasi: a.nama_aplikasi,
+          username: a.username,
+          password: a.password || 'TemporaryPassword123!',
+        })),
         data: {
           no_dokumen: docMeta.no_dokumen,
           tanggal_terbit: docMeta.tanggal_terbit,
@@ -364,23 +377,40 @@ export default function BastAplikasiFormPage({ user }) {
           hari_pelaksanaan: docMeta.hari_pelaksanaan,
           tanggal_pelaksanaan: docMeta.tanggal_pelaksanaan,
           penyerah,
-          penerima,
+          penerima: {
+            ...penerima,
+            nipp_identitas: penerima.nipp_identitas || penerima.nipp,
+            nipp: penerima.nipp || penerima.nipp_identitas,
+            jabatan_instansi: penerima.jabatan_instansi || penerima.jabatan,
+            jabatan: penerima.jabatan || penerima.jabatan_instansi,
+          },
           accounts,
           keperluan,
-          masa_aktif: masaAktif,
+          masa_aktif_mulai: masaAktif.mulai,
+          masa_aktif_sampai: masaAktif.sampai || masaAktif.selesai,
+          masa_aktif_selesai: masaAktif.selesai || masaAktif.sampai,
+          masa_aktif: {
+            mulai: masaAktif.mulai,
+            sampai: masaAktif.sampai || masaAktif.selesai,
+            selesai: masaAktif.selesai || masaAktif.sampai,
+          },
           submitted_at: new Date().toISOString(),
           is_signed_penyerah: !asDraft,
           signature_pin: signaturePin
         }
       };
 
-      const res = await api.createDocument(payload).catch(() => null);
+      const res = await api.createDocument(payload);
       showToast(asDraft ? 'Draf BAST User Aplikasi berhasil disimpan.' : 'BAST User Aplikasi berhasil disahkan dan dikirim ke pihak penerima.');
       setTimeout(() => {
         navigate('/bast-aplikasi');
       }, 1200);
     } catch (err) {
-      setErrorMessage(err.message || 'Gagal menyimpan dokumen BAST.');
+      console.error('Submit BAST User error:', err);
+      const detailError = err.errors 
+        ? Object.values(err.errors).flat().join(' | ') 
+        : (err.message || 'Gagal menyimpan dokumen BAST.');
+      setErrorMessage(detailError);
     } finally {
       setIsSavingDraft(false);
       setIsSubmitting(false);
@@ -1040,7 +1070,7 @@ export default function BastAplikasiFormPage({ user }) {
                 <input
                   type="date"
                   value={masaAktif.selesai}
-                  onChange={(e) => setMasaAktif({ ...masaAktif, selesai: e.target.value })}
+                  onChange={(e) => setMasaAktif({ ...masaAktif, selesai: e.target.value, sampai: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-[#003580] outline-none"
                 />
               </div>
