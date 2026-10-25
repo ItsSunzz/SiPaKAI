@@ -40,6 +40,7 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
 
   // Tab view: 'pdf' (Pratinjau PDF Asli Backend ho02.blade.php) | 'detail' (Rincian & Tanda Tangan)
   const [activeTab, setActiveTab] = useState('pdf');
+  const [isIframeLoading, setIsIframeLoading] = useState(true);
 
   // Password reveal toggle in accounts table
   const [revealedPasswords, setRevealedPasswords] = useState({});
@@ -296,7 +297,7 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
 
   const handleDownloadPdf = () => {
     if (!doc?.id) return;
-    const url = api.getDocumentPdfUrl(doc.id);
+    const url = api.getDocumentPdfUrl(doc.id, false);
     window.open(url, '_blank');
   };
 
@@ -575,8 +576,8 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
       {/* MAIN VIEW AREA */}
       {activeTab === 'pdf' ? (
         /* LEMBAR PRATINJAU PDF ASLI DARI BACKEND ho02.blade.php */
-        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[85vh]">
-          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs font-semibold text-slate-600">
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[85vh] relative">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#003580]" />
               <span>Pratinjau Dokumen PDF Resmi Backend (Template: resources/views/pdf/ho02.blade.php)</span>
@@ -589,11 +590,24 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
               <Download className="w-3.5 h-3.5" /> Buka / Simpan File PDF Asli
             </button>
           </div>
-          <iframe
-            src={pdfUrl}
-            title="BAST User Aplikasi PDF Sheet"
-            className="w-full flex-1 border-0"
-          />
+          <div className="flex-1 relative w-full h-full bg-slate-100 flex items-center justify-center">
+            {isIframeLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 z-10 text-slate-500">
+                <Loader2 className="w-7 h-7 animate-spin text-[#003580]" />
+                <span className="text-xs font-medium">Memuat pratinjau lembar PDF resmi KAI...</span>
+              </div>
+            )}
+            {pdfUrl ? (
+              <iframe
+                src={pdfUrl}
+                title="BAST User Aplikasi PDF Sheet"
+                onLoad={() => setIsIframeLoading(false)}
+                className="w-full h-full border-0 bg-white"
+              />
+            ) : (
+              <div className="text-xs text-slate-500">Memuat URL dokumen...</div>
+            )}
+          </div>
         </div>
       ) : activeTab === 'sheet' ? (
         /* LEMBAR CETAK STANDAR A4 FORMULIR RESMI KAI */

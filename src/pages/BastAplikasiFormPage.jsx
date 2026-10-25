@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Search,
   KeyRound,
   Plus,
   Trash2,
@@ -47,6 +48,51 @@ export default function BastAplikasiFormPage({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEditMode = Boolean(id);
+  // --- Master Pegawai & NIPP Auto-Suggest ---
+  const [apiUsers, setApiUsers] = useState([]);
+  const [isSearchNippModalOpen, setIsSearchNippModalOpen] = useState(false);
+  const [nippSearchQuery, setNippSearchQuery] = useState('');
+
+  useEffect(() => {
+    async function loadPegawai() {
+      try {
+        const res = await api.getApprovers('all=1').catch(() => null);
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        setApiUsers(list);
+      } catch (err) {}
+    }
+    loadPegawai();
+  }, []);
+
+  const allPegawai = useMemo(() => {
+    return apiUsers.map((u) => {
+      const nip = u.nip || `KAI-${u.id}`;
+      return {
+        id: u.id,
+        nipp: nip,
+        nama: u.name || u.nama || 'Pegawai KAI',
+        jabatan: typeof u.jabatan === 'object' ? u.jabatan?.nama : (u.jabatan || 'Staff'),
+        tempat_kedudukan: u.unit_kerja || 'Unit Kantor Pusat Bandung',
+        personal_area: u.unit_kerja || 'PA-0100 Bandung',
+        unit: u.unit_kerja || 'Unit Sistem Informasi TI'
+      };
+    });
+  }, [apiUsers]);
+
+  const handleSelectPegawaiPenerima = (pegawai) => {
+    setPenerima((prev) => ({
+      ...prev,
+      tipe_identitas: 'pegawai',
+      nama: pegawai.nama,
+      nipp: pegawai.nipp,
+      jabatan: pegawai.jabatan,
+      tempat_kedudukan: pegawai.tempat_kedudukan,
+      personal_area: pegawai.personal_area || pegawai.unit || prev.personal_area,
+    }));
+    setIsSearchNippModalOpen(false);
+    setNippSearchQuery('');
+  };
+
 
   const [isLoading, setIsLoading] = useState(isEditMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,9 +100,58 @@ export default function BastAplikasiFormPage({ user }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Modal Pratinjau Lembar Fisik A4 (FR.SM/TI/011.002/10-2020)
+  // Modal Pratinjau Lembar Fisik A4 (FR.SM/TI/011.002/10-2020) - Backend DomPDF
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [previewPage, setPreviewPage] = useState(1); // 1 | 2
+  const [previewPdfBlobUrl, setPreviewPdfBlobUrl] = useState(null);
+  const [isLoadingPreviewPdf, setIsLoadingPreviewPdf] = useState(false);
+  const [previewPdfError, setPreviewPdfError] = useState(null);
+
+  const handleOpenPreviewPdf = async () => {
+    setIsPreviewOpen(true);
+    setIsLoadingPreviewPdf(true);
+    setPreviewPdfError(null);
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+
+    try {
+      const payload = {
+        type: 'ho02',
+        data: {
+          ...docMeta,
+          penyerah,
+          penerima,
+          keperluan,
+          masa_aktif: masaAktif,
+          masa_aktif_mulai: masaAktif?.mulai,
+          masa_aktif_sampai: masaAktif?.sampai,
+        },
+        items: accounts.map((acc) => ({
+          nama_aplikasi: acc.nama_aplikasi,
+          username: acc.username,
+          password: acc.password || null,
+        })),
+      };
+
+      const blob = await api.previewPdf(payload);
+      const url = URL.createObjectURL(blob);
+      setPreviewPdfBlobUrl(url);
+    } catch (err) {
+      console.error('Gagal memuat pratinjau PDF:', err);
+      setPreviewPdfError(err.message || 'Gagal menghasilkan pratinjau PDF dari server.');
+    } finally {
+      setIsLoadingPreviewPdf(false);
+    }
+  };
+
+  const handleClosePreviewPdf = () => {
+    setIsPreviewOpen(false);
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+  };
 
   // --- Form State ---
   // 1. Metadata Dokumen & Referensi
@@ -330,11 +425,11 @@ export default function BastAplikasiFormPage({ user }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setIsPreviewOpen(true)}
+            onClick={handleOpenPreviewPdf}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition-colors"
           >
             <FileText className="w-4 h-4 text-sky-600" />
-            <span>Pratinjau Lembar Fisik (A4)</span>
+            <span>Pratinjau PDF</span>
           </button>
 
           <button
@@ -713,9 +808,21 @@ export default function BastAplikasiFormPage({ user }) {
                 </p>
               </div>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-900/50 text-blue-200 uppercase">
-              PIHAK II
-            </span>
+            <div className="flex items-center gap-2">
+              {penerima.tipe_identitas === 'pegawai' && (
+                <button
+                  type="button"
+                  onClick={() => setIsSearchNippModalOpen(true)}
+                  className="inline-flex items-center gap-1 bg-white hover:bg-slate-100 text-[#0b2046] text-[11px] px-2.5 py-1 rounded-md font-bold transition-all shadow-xs active:scale-95"
+                >
+                  <Search className="w-3 h-3 stroke-[2.5]" />
+                  Cari berdasarkan NIPP
+                </button>
+              )}
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-900/50 text-blue-200 uppercase">
+                PIHAK II
+              </span>
+            </div>
           </div>
 
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
@@ -762,11 +869,42 @@ export default function BastAplikasiFormPage({ user }) {
               </div>
               <input
                 type="text"
+                list="penerima-user-nipp-suggestions"
                 value={penerima.nipp}
-                onChange={(e) => setPenerima({ ...penerima, nipp: e.target.value })}
-                placeholder={penerima.tipe_identitas === 'pegawai' ? 'misal: 61204' : 'misal: 3273210987650001 (KTP) / A1234567 (Paspor)'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (penerima.tipe_identitas === 'pegawai') {
+                    const found = allPegawai.find(
+                      (p) => p.nipp && p.nipp.toLowerCase() === val.trim().toLowerCase()
+                    );
+                    if (found) {
+                      setPenerima((prev) => ({
+                        ...prev,
+                        nipp: found.nipp,
+                        nama: found.nama,
+                        jabatan: found.jabatan,
+                        tempat_kedudukan: found.tempat_kedudukan,
+                        personal_area: found.personal_area || found.unit || prev.personal_area,
+                      }));
+                    } else {
+                      setPenerima({ ...penerima, nipp: val });
+                    }
+                  } else {
+                    setPenerima({ ...penerima, nipp: val });
+                  }
+                }}
+                placeholder={penerima.tipe_identitas === 'pegawai' ? 'Ketik NIPP (misal: 61204)...' : 'misal: 3273210987650001 (KTP) / A1234567 (Paspor)'}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono text-xs focus:bg-white focus:ring-2 focus:ring-[#003580] outline-none"
               />
+              {penerima.tipe_identitas === 'pegawai' && (
+                <datalist id="penerima-user-nipp-suggestions">
+                  {allPegawai.map((p) => (
+                    <option key={p.id || p.nipp} value={p.nipp}>
+                      {p.nama} - {p.jabatan}
+                    </option>
+                  ))}
+                </datalist>
+              )}
               <span className="text-[10px] text-slate-400 mt-1 block">
                 *No Identitas = No KTP (untuk WNI) atau No Paspor (untuk WNA)
               </span>
@@ -1029,7 +1167,7 @@ export default function BastAplikasiFormPage({ user }) {
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => setIsPreviewOpen(true)}
+                onClick={handleOpenPreviewPdf}
                 className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors"
               >
                 Pratinjau Lembar Fisik
@@ -1049,290 +1187,161 @@ export default function BastAplikasiFormPage({ user }) {
       </div>
 
       {/* MODAL PRATINJAU LEMBAR FISIK A4 (PERSIS FORMAT FORMULIR KAI) */}
+            {/* Modal Pratinjau Dokumen Backend DomPDF */}
       {isPreviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
-            {/* Modal Top Bar */}
-            <div className="bg-[#0a192f] text-white p-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col h-[90vh]">
+            <div className="bg-[#0b2046] text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-sky-400" />
                 <div>
-                  <h3 className="font-bold text-sm">
-                    Pratinjau Lembar Formulir BAST User Aplikasi (A4)
-                  </h3>
-                  <p className="text-[11px] text-slate-300">
-                    Standar Formulir PT Kereta Api Indonesia (Persero) FR.SM/TI/011.002/10-2020
-                  </p>
+                  <h3 className="font-bold text-sm">Pratinjau PDF Formulir BAST User Aplikasi (HO-02)</h3>
+                  <p className="text-[11px] text-slate-300">Format standar resmi KAI langsung dari template DomPDF backend</p>
                 </div>
               </div>
-
-              {/* Page Toggle & Close */}
-              <div className="flex items-center gap-3">
-                <div className="flex bg-white/10 p-1 rounded-lg text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPage(1)}
-                    className={`px-3 py-1 rounded-md transition-all ${previewPage === 1 ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              <div className="flex items-center gap-2">
+                {previewPdfBlobUrl && (
+                  <a
+                    href={previewPdfBlobUrl}
+                    download="BAST-User-Aplikasi-Draft.pdf"
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-xs transition-colors"
                   >
-                    Halaman 1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPage(2)}
-                    className={`px-3 py-1 rounded-md transition-all ${previewPage === 2 ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    Halaman 2
-                  </button>
-                </div>
+                    <Download className="w-3.5 h-3.5" />
+                    Unduh PDF
+                  </a>
+                )}
                 <button
                   type="button"
-                  onClick={() => setIsPreviewOpen(false)}
-                  className="text-slate-400 hover:text-white"
+                  onClick={handleClosePreviewPdf}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Printable Preview Area */}
-            <div className="p-6 overflow-y-auto bg-slate-200 flex-1 flex justify-center">
-              {/* A4 Sheet Container */}
-              <div className="bg-white shadow-xl border border-slate-300 w-full max-w-2xl p-8 text-slate-900 text-[11px] space-y-4 font-sans min-h-[750px] relative">
-                
-                {/* 1. KOP SURAT FORMULIR KAI RESMI */}
-                <div className="border border-black grid grid-cols-12 text-center text-[10px]">
-                  {/* Logo Box */}
-                  <div className="col-span-3 border-r border-black p-2 flex flex-col items-center justify-center">
-                    <KaiLogo className="h-9 w-auto" />
-                    <div className="mt-1 border border-red-600 text-red-600 font-bold px-3 py-0.5 text-[9px] tracking-widest">
-                      RAHASIA
-                    </div>
-                  </div>
-
-                  {/* Title Box */}
-                  <div className="col-span-5 border-r border-black p-2 flex flex-col justify-center text-center">
-                    <h2 className="font-bold text-[11px] leading-tight">
-                      PT KERETA API INDONESIA (PERSERO)
-                    </h2>
-                    <h3 className="font-semibold text-[10px] mt-0.5">
-                      SISTEM INFORMASI
-                    </h3>
-                    <div className="font-bold text-[11px] mt-1 border-t border-black pt-1 uppercase">
-                      FORMULIR BERITA ACARA SERAH TERIMA USER APLIKASI
-                    </div>
-                  </div>
-
-                  {/* Document Meta Table */}
-                  <div className="col-span-4 p-1.5 text-left text-[9px] leading-tight flex flex-col justify-center space-y-0.5">
-                    <div className="grid grid-cols-5">
-                      <span className="col-span-2">Nomor</span>
-                      <span className="col-span-3 font-mono">: {docMeta.no_dokumen}</span>
-                    </div>
-                    <div className="grid grid-cols-5">
-                      <span className="col-span-2">Tanggal Terbit</span>
-                      <span className="col-span-3">: {docMeta.tanggal_terbit}</span>
-                    </div>
-                    <div className="grid grid-cols-5">
-                      <span className="col-span-2">Versi</span>
-                      <span className="col-span-3">: {docMeta.versi}</span>
-                    </div>
-                    <div className="grid grid-cols-5">
-                      <span className="col-span-2">Halaman</span>
-                      <span className="col-span-3">: {previewPage} dari 2</span>
-                    </div>
-                  </div>
+            <div className="flex-1 bg-slate-100 p-2 sm:p-4 overflow-hidden flex items-center justify-center">
+              {isLoadingPreviewPdf ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
+                  <Loader2 className="w-8 h-8 text-[#EE7623] animate-spin" />
+                  <p className="text-xs font-medium">Menghasilkan pratinjau dokumen dari template backend...</p>
                 </div>
-
-                {/* 2. KOTAK NO. REF & BUSINESS AREA */}
-                <div className="border border-black p-2 text-[10px] w-64 space-y-0.5">
-                  <div className="grid grid-cols-3">
-                    <span>No. Ref</span>
-                    <span className="col-span-2 font-mono font-semibold">: {docMeta.no_ref}</span>
-                  </div>
-                  <div className="grid grid-cols-3">
-                    <span>Tanggal</span>
-                    <span className="col-span-2">: {docMeta.tanggal_ref}</span>
-                  </div>
-                  <div className="grid grid-cols-3">
-                    <span>Business Area</span>
-                    <span className="col-span-2 font-mono font-semibold">: {docMeta.business_area}</span>
-                  </div>
+              ) : previewPdfError ? (
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 p-6 rounded-xl max-w-md text-center space-y-2">
+                  <p className="text-sm font-semibold">Gagal memuat pratinjau PDF</p>
+                  <p className="text-xs text-rose-600">{previewPdfError}</p>
+                  <button
+                    type="button"
+                    onClick={handleOpenPreviewPdf}
+                    className="mt-2 px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+                  >
+                    Coba Lagi
+                  </button>
                 </div>
-
-                {/* HALAMAN 1 KONTEN */}
-                {previewPage === 1 ? (
-                  <div className="space-y-3.5 leading-relaxed text-[10.5px]">
-                    <p>
-                      Pada hari ini, <strong className="border-b border-dotted border-black px-2">{docMeta.hari_pelaksanaan}</strong> tanggal <strong className="border-b border-dotted border-black px-2">{docMeta.tanggal_pelaksanaan}</strong>
-                    </p>
-
-                    {/* Penyerah */}
-                    <div className="grid grid-cols-12 gap-y-0.5 pl-2">
-                      <span className="col-span-4">Nama</span>
-                      <span className="col-span-8">: {penyerah.nama}</span>
-                      <span className="col-span-4">NIPP</span>
-                      <span className="col-span-8 font-mono">: {penyerah.nipp}</span>
-                      <span className="col-span-4">Jabatan</span>
-                      <span className="col-span-8">: {penyerah.jabatan}</span>
-                      <span className="col-span-4">Tempat Kedudukan</span>
-                      <span className="col-span-8">: {penyerah.tempat_kedudukan}</span>
-                      <span className="col-span-4">Personal Area</span>
-                      <span className="col-span-8">: {penyerah.personal_area}</span>
-                    </div>
-
-                    <p className="font-semibold pt-1">
-                      Menyerahkan user aplikasi sebagai berikut:
-                    </p>
-
-                    {/* Tabel Akun User Aplikasi */}
-                    <table className="w-full border-collapse border border-black text-[10px]">
-                      <thead>
-                        <tr className="bg-slate-100">
-                          <th className="border border-black p-1 text-center w-8">No</th>
-                          <th className="border border-black p-1 text-left">Nama Aplikasi</th>
-                          <th className="border border-black p-1 text-left">Username</th>
-                          <th className="border border-black p-1 text-left">Password</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {accounts.map((acc, aIdx) => (
-                          <tr key={acc.id || aIdx}>
-                            <td className="border border-black p-1 text-center">{aIdx + 1}</td>
-                            <td className="border border-black p-1 font-semibold">{acc.nama_aplikasi}</td>
-                            <td className="border border-black p-1 font-mono">{acc.username}</td>
-                            <td className="border border-black p-1 font-mono">{acc.password ? acc.password : '••••••••••••'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* Pihak Penerima */}
-                    <div className="pt-1">
-                      <p className="font-semibold">Kepada</p>
-                      <div className="grid grid-cols-12 gap-y-0.5 pl-2 mt-0.5">
-                        <span className="col-span-4">Nama</span>
-                        <span className="col-span-8 font-semibold">: {penerima.nama || '...................................................'}</span>
-                        <span className="col-span-4">NIPP / No Identitas</span>
-                        <span className="col-span-8 font-mono">: {penerima.nipp || '...................................................'}</span>
-                        <span className="col-span-4">Jabatan / Instansi</span>
-                        <span className="col-span-8">: {penerima.jabatan || '...................................................'}</span>
-                        <span className="col-span-4">Tempat Kedudukan</span>
-                        <span className="col-span-8">: {penerima.tempat_kedudukan || '...................................................'}</span>
-                        <span className="col-span-4">Personal Area</span>
-                        <span className="col-span-8">: {penerima.personal_area || '...................................................'}</span>
-                        <span className="col-span-4">Owner Responsible</span>
-                        <span className="col-span-8">: {penerima.owner_responsible || '...................................................'}</span>
-                        <span className="col-span-4">Custodian</span>
-                        <span className="col-span-8">: {penerima.custodian || '...................................................'}</span>
-                      </div>
-                    </div>
-
-                    {/* Keperluan */}
-                    <div>
-                      <p className="font-semibold">Keperluan :</p>
-                      <p className="pl-2 italic text-slate-700">{keperluan}</p>
-                    </div>
-
-                    {/* Masa Aktif */}
-                    <div>
-                      <p className="font-semibold">
-                        Masa Aktif User : Mulai Tanggal <strong className="border-b border-dotted border-black px-1">{masaAktif.mulai}</strong> s/d Tanggal <strong className="border-b border-dotted border-black px-1">{masaAktif.selesai}</strong>
-                      </p>
-                    </div>
-
-                    {/* Ketentuan 1, 2, 3 */}
-                    <div className="space-y-1 text-[9.5px] leading-tight text-slate-800 pt-1">
-                      <p>
-                        1. Untuk dipergunakan sebagai alat kerja mengakses aplikasi sesuai dengan tugas dan tanggung jawabnya. Pemegang user aplikasi bertanggung jawab penuh terhadap semua transaksi yang dilakukannya dan tidak memberitahukan kepada orang lain <em>username</em> dan <em>password</em> aplikasi yang dimiliki.
-                      </p>
-                      <p>
-                        2. <em>Username</em> akan otomatis dinonaktifkan setelah masa aktif user berakhir. PT. Kereta Api Indonesia (Persero) berhak mencabut hak penggunaan aplikasi secara sepihak jika terjadi penyalahgunaan user aplikasi.
-                      </p>
-                      <p>
-                        3. Apabila dikemudian hari terbukti Pemegang user aplikasi melakukan pelanggaran, maka Pemegang user aplikasi bersedia menerima sanksi dari PT. Kereta Api Indonesia (Persero) dan/atau pihak lain yang berwenang sesuai ketentuan perundang-undangan yang berlaku.
-                      </p>
-                    </div>
-
-                    {/* Kolom Tanda Tangan */}
-                    <div className="grid grid-cols-2 pt-3 text-center text-[10px]">
-                      {/* Yang Menyerahkan */}
-                      <div className="space-y-12">
-                        <p className="font-semibold">Yang Menyerahkan</p>
-                        <div>
-                          <p className="font-bold underline uppercase">{penyerah.nama}</p>
-                          <p className="font-mono text-[9px]">NIPP. {penyerah.nipp}</p>
-                        </div>
-                      </div>
-
-                      {/* Yang Menerima */}
-                      <div className="space-y-3">
-                        <p className="font-semibold">Yang Menerima</p>
-                        <div className="border border-dashed border-slate-400 w-24 h-12 mx-auto flex items-center justify-center text-[8px] text-slate-400">
-                          Materai<br />Rp 6.000 / 10.000
-                        </div>
-                        <div>
-                          <p className="font-bold underline uppercase">{penerima.nama || '....................................'}</p>
-                          <p className="font-mono text-[9px]">NIPP / No Identitas : {penerima.nipp || '...................'}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Catatan Kaki */}
-                    <p className="text-[8.5px] italic text-slate-500 pt-2 border-t border-slate-200">
-                      *Nipp & Jabatan diisi khusus untuk pegawai PT. Kereta Api Indonesia (Persero)
-                    </p>
-                  </div>
-                ) : (
-                  /* HALAMAN 2 KONTEN */
-                  <div className="space-y-6 pt-4 text-[10.5px]">
-                    <div className="bg-slate-50 border border-slate-300 p-4 rounded text-slate-700 leading-relaxed space-y-2">
-                      <h4 className="font-bold text-[11px] text-slate-900 uppercase">
-                        Catatan Khusus & Lampiran Ketentuan Hak Akses (Halaman 2 dari 2)
-                      </h4>
-                      <p>
-                        *No Identitas = No KTP (untuk WNI) atau No Pasport (WNA)
-                      </p>
-                      <p>
-                        1. Seluruh kredensial akun yang diserahkan dalam formulir ini tercatat secara terpusat dalam sistem Single Sign-On (SSO) dan Identity Access Management (IAM) PT Kereta Api Indonesia (Persero).
-                      </p>
-                      <p>
-                        2. Pelaksanaan audit log dan monitoring riwayat login dilakukan secara berkala oleh Divisi Information Technology Quality & Security Assurance.
-                      </p>
-                      <p>
-                        3. Perpanjangan hak akses wajib diajukan selambat-lambatnya 14 (empat belas) hari kerja sebelum masa aktif user berakhir.
-                      </p>
-                    </div>
-
-                    <div className="border border-slate-300 rounded p-4 text-[10px] space-y-1">
-                      <p className="font-bold text-slate-800 uppercase">Verifikasi Keabsahan Dokumen Digital (SI-PAKAI)</p>
-                      <p className="font-mono text-slate-500">Document Hash : SHA256-KAI-{Date.now().toString(16).toUpperCase()}</p>
-                      <p className="text-slate-500">Status Validasi : Tersertifikasi Digital & Mengikat</p>
-                    </div>
-                  </div>
-                )}
-              </div>
+              ) : previewPdfBlobUrl ? (
+                <iframe
+                  src={previewPdfBlobUrl}
+                  title="Pratinjau PDF BAST User Aplikasi"
+                  className="w-full h-full rounded-lg border border-slate-300 shadow-sm bg-white"
+                />
+              ) : null}
             </div>
 
-            {/* Modal Bottom Bar */}
-            <div className="bg-slate-50 p-3 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-semibold">
-                Format lembar A4 siap dicetak sesuai standar formulir resmi KAI
-              </span>
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+              <span>* Pratinjau dihasilkan langsung menggunakan engine DomPDF backend template ho02.blade.php.</span>
               <button
                 type="button"
-                onClick={() => {
-                  setIsPreviewOpen(false);
-                  window.print();
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold rounded-xl shadow-xs"
+                onClick={handleClosePreviewPdf}
+                className="px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
               >
-                <Download className="w-4 h-4" />
-                <span>Cetak Lembar Resmi</span>
+                Tutup
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL: CARI PENERIMA BERDASARKAN NIPP */}
+      {isSearchNippModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-[#0b2046] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Search className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-bold text-sm">Pilih Pihak Penerima Berdasarkan NIPP</h3>
+                  <p className="text-[10px] text-slate-300">Pencarian pegawai master SDM PT KAI</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSearchNippModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
+              <Search className="w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                autoFocus
+                value={nippSearchQuery}
+                onChange={(e) => setNippSearchQuery(e.target.value)}
+                placeholder="Ketik NIPP atau nama pegawai..."
+                className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#003580]"
+              />
+            </div>
+
+            <div className="p-3 max-h-80 overflow-y-auto space-y-1.5">
+              {allPegawai
+                .filter((p) => {
+                  const q = nippSearchQuery.toLowerCase();
+                  return (
+                    !q ||
+                    p.nama.toLowerCase().includes(q) ||
+                    p.nipp.toLowerCase().includes(q) ||
+                    (p.jabatan || '').toLowerCase().includes(q)
+                  );
+                })
+                .map((p) => (
+                  <div
+                    key={p.nipp}
+                    onClick={() => handleSelectPegawaiPenerima(p)}
+                    className="p-3 rounded-lg border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition-colors group"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 group-hover:text-[#003580]">
+                        {p.nama}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                        NIPP: <span className="font-mono font-bold text-slate-700">{p.nipp}</span> • {p.jabatan}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {p.tempat_kedudukan}
+                      </div>
+                    </div>
+                    <span className="text-[11px] bg-blue-100 group-hover:bg-[#003580] text-[#003580] group-hover:text-white font-bold px-2.5 py-1 rounded-md transition-colors shadow-2xs">
+                      Pilih
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 text-right">
+              <button
+                type="button"
+                onClick={() => setIsSearchNippModalOpen(false)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

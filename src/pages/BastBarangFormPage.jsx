@@ -85,6 +85,54 @@ export default function BastBarangFormPage({ user }) {
   const [editingItem, setEditingItem] = useState(null);
 
   const [isPreviewPdfModalOpen, setIsPreviewPdfModalOpen] = useState(false);
+  const [previewPdfBlobUrl, setPreviewPdfBlobUrl] = useState(null);
+  const [isLoadingPreviewPdf, setIsLoadingPreviewPdf] = useState(false);
+  const [previewPdfError, setPreviewPdfError] = useState(null);
+
+  const handleOpenPreviewPdf = async () => {
+    setIsPreviewPdfModalOpen(true);
+    setIsLoadingPreviewPdf(true);
+    setPreviewPdfError(null);
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+
+    try {
+      const payload = {
+        type: 'ho01',
+        data: {
+          ...generalData,
+          penyerah,
+          penerima,
+        },
+        items: items.map((it) => ({
+          nama_barang: it.nama_barang,
+          brand_series: it.brand_series || null,
+          no_inventaris: it.no_inventaris,
+          serial_number: it.serial_number || null,
+          keterangan: it.keterangan || null,
+        })),
+      };
+
+      const blob = await api.previewPdf(payload);
+      const url = URL.createObjectURL(blob);
+      setPreviewPdfBlobUrl(url);
+    } catch (err) {
+      console.error('Gagal memuat pratinjau PDF:', err);
+      setPreviewPdfError(err.message || 'Gagal menghasilkan pratinjau PDF dari server.');
+    } finally {
+      setIsLoadingPreviewPdf(false);
+    }
+  };
+
+  const handleClosePreviewPdf = () => {
+    setIsPreviewPdfModalOpen(false);
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+  };
 
   // --- Tanda Tangan Langsung (Direct Signature Modal) ---
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
@@ -1387,7 +1435,7 @@ export default function BastBarangFormPage({ user }) {
 
             <button
               type="button"
-              onClick={() => setIsPreviewPdfModalOpen(true)}
+              onClick={handleOpenPreviewPdf}
               className="px-4 py-2 text-xs font-semibold text-white bg-[#0a192f] hover:bg-[#122b52] rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
             >
               <FileText className="w-3.5 h-3.5 text-sky-400" />
@@ -1979,136 +2027,75 @@ export default function BastBarangFormPage({ user }) {
       {/* ========================================================================= */}
       {/* --- MODAL 5: PRATINJAU FORMAT CETAK BAST (PDF A4) --- */}
       {/* ========================================================================= */}
+      {/* MODAL 5: Pratinjau Dokumen Backend DomPDF */}
+      {/* ========================================================================= */}
       {isPreviewPdfModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col h-[90vh]">
             <div className="bg-[#0a192f] text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-sky-400" />
                 <div>
-                  <h3 className="font-bold text-sm">Pratinjau Berita Acara Serah Terima Barang Fisik (A4)</h3>
-                  <p className="text-[11px] text-slate-300">Format standar PT Kereta Api Indonesia (Persero)</p>
+                  <h3 className="font-bold text-sm">Pratinjau PDF Berita Acara Serah Terima Barang (HO-01)</h3>
+                  <p className="text-[11px] text-slate-300">Format resmi langsung dari template backend SIPAKAI</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsPreviewPdfModalOpen(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
-              <div className="bg-white shadow-md border border-slate-300 w-full max-w-2xl p-8 text-slate-900 text-[11px] space-y-4">
-                <div className="border-b-2 border-slate-900 pb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-bold tracking-wider text-[#003580]">PT KERETA API INDONESIA (PERSERO)</h2>
-                    <p className="text-[10px] text-slate-500 font-semibold">{generalData.nama_unit.toUpperCase()} - {generalData.wilayah.toUpperCase()}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] border border-rose-600 text-rose-600 font-bold px-2 py-0.5">
-                      RESMI
-                    </span>
-                    <p className="text-[10px] font-mono text-slate-500 mt-1">FR.BAST/HO-01/{new Date().getFullYear()}</p>
-                  </div>
-                </div>
-
-                <div className="text-center pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wide">
-                    BERITA ACARA SERAH TERIMA BARANG
-                  </h3>
-                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                    Nomor: BAST-HO01/{generalData.wilayah.replace(/\s+/g, '')}/{new Date().getFullYear()}/DRAFT
-                  </p>
-                </div>
-
-                <p className="leading-relaxed">
-                  Pada hari ini, tanggal <strong>{new Date(generalData.tanggal_serah_terima).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</strong>, bertempat di <strong>{generalData.tempat_serah_terima}</strong>, telah dilaksanakan serah terima fisik barang antar pihak di bawah ini:
-                </p>
-
-                <div className="space-y-2.5 border-l-2 border-slate-300 pl-3">
-                  <div>
-                    <strong>PIHAK I (YANG MENYERAHKAN):</strong>
-                    <div className="grid grid-cols-3 gap-1 mt-0.5">
-                      <span>Nama / NIPP</span>
-                      <span className="col-span-2">: {penyerah.nama} ({penyerah.nipp})</span>
-                      <span>Jabatan / Unit</span>
-                      <span className="col-span-2">: {penyerah.jabatan}</span>
-                      <span>Tempat Kedudukan</span>
-                      <span className="col-span-2">: {penyerah.tempat_kedudukan} ({penyerah.personal_area})</span>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <strong>PIHAK II (YANG MENERIMA):</strong>
-                    <div className="grid grid-cols-3 gap-1 mt-0.5">
-                      <span>Nama / NIPP</span>
-                      <span className="col-span-2">: {penerima.nama} ({penerima.nipp})</span>
-                      <span>Jabatan / Unit</span>
-                      <span className="col-span-2">: {penerima.jabatan}</span>
-                      <span>Tempat Kedudukan</span>
-                      <span className="col-span-2">: {penerima.tempat_kedudukan} ({penerima.personal_area})</span>
-                    </div>
-                  </div>
-                </div>
-
-                <table className="w-full border-collapse border border-slate-400 text-[10px] mt-2">
-                  <thead>
-                    <tr className="bg-slate-100">
-                      <th className="border border-slate-400 p-1 text-center w-6">No</th>
-                      <th className="border border-slate-400 p-1">Nama Barang</th>
-                      <th className="border border-slate-400 p-1">Brand / Series</th>
-                      <th className="border border-slate-400 p-1">No. Inventaris</th>
-                      <th className="border border-slate-400 p-1">Serial Number</th>
-                      <th className="border border-slate-400 p-1">Keterangan</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it, i) => (
-                      <tr key={it.id || i}>
-                        <td className="border border-slate-400 p-1 text-center">{i + 1}</td>
-                        <td className="border border-slate-400 p-1 font-semibold">{it.nama_barang}</td>
-                        <td className="border border-slate-400 p-1">{it.brand_series || '-'}</td>
-                        <td className="border border-slate-400 p-1 font-mono">{it.no_inventaris}</td>
-                        <td className="border border-slate-400 p-1 font-mono">{it.serial_number || '-'}</td>
-                        <td className="border border-slate-400 p-1">{it.keterangan || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* Signatures of the two parties (no approval column) */}
-                <div className="grid grid-cols-2 pt-6 text-center">
-                  <div>
-                    <p className="font-semibold">Yang Menyerahkan (Pihak I)</p>
-                    <div className="h-16 flex items-center justify-center text-slate-400 italic text-[10px]">
-                      [ Tanda Tangan Digital Pembuat ]
-                    </div>
-                    <p className="font-bold underline">{penyerah.nama}</p>
-                    <p className="text-[10px] text-slate-500">NIPP. {penyerah.nipp}</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Yang Menerima (Pihak II)</p>
-                    <div className="h-16 flex items-center justify-center text-slate-400 italic text-[10px]">
-                      [ Menunggu Tanda Tangan Pihak Kedua ]
-                    </div>
-                    <p className="font-bold underline">{penerima.nama}</p>
-                    <p className="text-[10px] text-slate-500">NIPP. {penerima.nipp}</p>
-                  </div>
-                </div>
+              <div className="flex items-center gap-2">
+                {previewPdfBlobUrl && (
+                  <a
+                    href={previewPdfBlobUrl}
+                    download={`BAST-HO01-${generalData.wilayah || 'Draft'}.pdf`}
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-xs transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Unduh PDF
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClosePreviewPdf}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-              <span className="text-xs text-slate-500">
-                Alur BAST dua pihak: Pembuat menandatangani langsung dan mengirim ke Pihak Kedua (User #{penyerahUserId}).
-              </span>
+            <div className="flex-1 bg-slate-100 p-2 sm:p-4 overflow-hidden flex items-center justify-center">
+              {isLoadingPreviewPdf ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
+                  <Loader2 className="w-8 h-8 text-[#f05a22] animate-spin" />
+                  <p className="text-xs font-medium">Menghasilkan pratinjau dokumen dari template backend...</p>
+                </div>
+              ) : previewPdfError ? (
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 p-6 rounded-xl max-w-md text-center space-y-2">
+                  <p className="text-sm font-semibold">Gagal memuat pratinjau PDF</p>
+                  <p className="text-xs text-rose-600">{previewPdfError}</p>
+                  <button
+                    type="button"
+                    onClick={handleOpenPreviewPdf}
+                    className="mt-2 px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+                  >
+                    Coba Lagi
+                  </button>
+                </div>
+              ) : previewPdfBlobUrl ? (
+                <iframe
+                  src={previewPdfBlobUrl}
+                  title="Pratinjau PDF BAST Barang"
+                  className="w-full h-full rounded-lg border border-slate-300 shadow-sm bg-white"
+                />
+              ) : null}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+              <span>* Pratinjau dihasilkan langsung menggunakan engine DomPDF backend.</span>
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 text-xs font-semibold bg-[#0a192f] text-white rounded-lg flex items-center gap-1.5 shadow-2xs hover:bg-[#122b52]"
+                onClick={handleClosePreviewPdf}
+                className="px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
               >
-                <Download className="w-3.5 h-3.5" /> Cetak Dokumen
+                Tutup
               </button>
             </div>
           </div>
