@@ -199,9 +199,28 @@ export const api = {
     })
   },
 
-  getDocumentPdfUrl(id) {
-    const token = getToken()
-    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}`
+  async previewPdf(payload) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/documents/preview-pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/pdf',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Gagal memuat pratinjau PDF dari server.');
+    }
+    return await res.blob();
+  },
+
+  getDocumentPdfUrl(id, inline = true) {
+    const token = getToken();
+    const inlineParam = inline ? '&inline=1' : '';
+    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}`;
   },
 
   // Approvers list

@@ -39,6 +39,7 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
 
   // Active view tab: 'detail' | 'pdf'
   const [activeTab, setActiveTab] = useState('detail');
+  const [isIframeLoading, setIsIframeLoading] = useState(true);
 
   // Second Party Signing Form State
   const [pinInput, setPinInput] = useState('');
@@ -369,7 +370,7 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
 
   const handleDownloadPdf = () => {
     if (!doc?.id) return;
-    const pdfUrl = api.getDocumentPdfUrl(doc.id);
+    const pdfUrl = api.getDocumentPdfUrl(doc.id, false);
     window.open(pdfUrl, '_blank');
   };
 
@@ -542,22 +543,38 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
       {/* Main Content Area */}
       {activeTab === 'pdf' ? (
         /* PDF Sheet View */
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[80vh]">
-          <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-semibold text-slate-600">
-            <span>Pratinjau Dokumen Resmi Standar KAI</span>
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[80vh] relative">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-semibold text-slate-600 shrink-0">
+            <span className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#f05a22]" />
+              Pratinjau Dokumen Resmi Standar KAI (A4)
+            </span>
             <button
               type="button"
               onClick={handleDownloadPdf}
-              className="text-[#f05a22] hover:underline flex items-center gap-1"
+              className="text-[#f05a22] hover:underline flex items-center gap-1 font-bold cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" /> Buka / Simpan File PDF Asli
             </button>
           </div>
-          <iframe
-            src={pdfUrl}
-            title="BAST PDF Sheet"
-            className="w-full flex-1 border-0"
-          />
+          <div className="flex-1 relative w-full h-full bg-slate-100 flex items-center justify-center">
+            {isIframeLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 z-10 text-slate-500">
+                <Loader2 className="w-7 h-7 animate-spin text-[#f05a22]" />
+                <span className="text-xs font-medium">Memuat pratinjau lembar PDF resmi KAI...</span>
+              </div>
+            )}
+            {pdfUrl ? (
+              <iframe
+                src={pdfUrl}
+                title="BAST PDF Sheet"
+                onLoad={() => setIsIframeLoading(false)}
+                className="w-full h-full border-0 bg-white"
+              />
+            ) : (
+              <div className="text-xs text-slate-500">Memuat URL dokumen...</div>
+            )}
+          </div>
         </div>
       ) : (
         /* Document Details & Two-Party Signatures View */
