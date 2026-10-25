@@ -99,12 +99,31 @@ export default function BaPemusnahanFormPage({ user }) {
   const [verifikator3, setVerifikator3] = useState(''); // Atasan Pengguna Aset
   const [verifikator4, setVerifikator4] = useState(''); // VP IT Operation / Pimpinan Unit SI
 
+  // Helper to normalize jenis_aset to match backend DocumentSchema::JENIS_ASET ('Fisik,Jaringan,Informasi,Informasi HC,Informasi SC')
+  const normalizeJenisAset = (val) => {
+    if (!val) return 'Fisik';
+    const str = String(val).toLowerCase();
+    if (str.includes('jaringan') || str.includes('network')) return 'Jaringan';
+    if (str.includes('hc') || str.includes('hardcopy')) return 'Informasi HC';
+    if (str.includes('sc') || str.includes('softcopy')) return 'Informasi SC';
+    if (str.includes('informasi') || str.includes('software') || str.includes('lisensi') || str.includes('aplikasi')) return 'Informasi';
+    return 'Fisik';
+  };
+
+  const JENIS_ASET_OPTIONS = [
+    { value: 'Fisik', label: 'Fisik (Server, Hardware, Komputer, Media)' },
+    { value: 'Jaringan', label: 'Jaringan (Switch, Router, AP, Firewall)' },
+    { value: 'Informasi', label: 'Informasi (Data Digital & Dokumen)' },
+    { value: 'Informasi HC', label: 'Informasi HC (Hardcopy / Cetak Fisik)' },
+    { value: 'Informasi SC', label: 'Informasi SC (Softcopy / Media Elektronik)' },
+  ];
+
   // 3. Rincian Aset yang Dimusnahkan (items)
   const [items, setItems] = useState([
     {
       id: 1,
       nama_aset: 'Hard Disk Enterprise SAS 600GB 15k RPM',
-      jenis_aset: 'Penyimpanan (Storage)',
+      jenis_aset: 'Fisik',
       id_aset: 'AST-TI-2018-0912',
       jumlah: 4,
       satuan: 'Unit',
@@ -114,7 +133,7 @@ export default function BaPemusnahanFormPage({ user }) {
     {
       id: 2,
       nama_aset: 'Server Rak Dell PowerEdge R730',
-      jenis_aset: 'Perangkat Keras (Hardware)',
+      jenis_aset: 'Fisik',
       id_aset: 'AST-TI-2017-0419',
       jumlah: 1,
       satuan: 'Unit',
@@ -207,7 +226,7 @@ export default function BaPemusnahanFormPage({ user }) {
             setItems(rawItems.map((it, idx) => ({
               id: it.id || idx + 1,
               nama_aset: it.nama_aset || it.nama || '',
-              jenis_aset: it.jenis_aset || it.kategori || 'Hardware',
+              jenis_aset: normalizeJenisAset(it.jenis_aset || it.kategori),
               id_aset: it.id_aset || it.no_inventaris || '',
               jumlah: it.jumlah || 1,
               satuan: it.satuan || 'Unit',
@@ -281,7 +300,7 @@ export default function BaPemusnahanFormPage({ user }) {
       const mappedItems = dspDoc.items.map((it, idx) => ({
         id: Date.now() + idx,
         nama_aset: it.nama_aset || it.nama || 'Aset TI Terkait',
-        jenis_aset: it.jenis_aset || it.kategori || 'Hardware',
+        jenis_aset: normalizeJenisAset(it.jenis_aset || it.kategori || it.jenis),
         id_aset: it.id_aset || it.no_inventaris || `AST-KAI-${Date.now()}-${idx + 1}`,
         jumlah: it.jumlah || 1,
         satuan: it.satuan || 'Unit',
@@ -327,7 +346,7 @@ export default function BaPemusnahanFormPage({ user }) {
       },
       items: items.map(it => ({
         nama_aset: it.nama_aset,
-        jenis_aset: it.jenis_aset || 'Hardware',
+        jenis_aset: normalizeJenisAset(it.jenis_aset),
         id_aset: it.id_aset || '-',
         jumlah: Number(it.jumlah) || 1,
         satuan: it.satuan || 'Unit',
@@ -381,7 +400,7 @@ export default function BaPemusnahanFormPage({ user }) {
       {
         id: Date.now(),
         nama_aset: '',
-        jenis_aset: 'Perangkat Keras (Hardware)',
+        jenis_aset: 'Fisik',
         id_aset: '',
         jumlah: 1,
         satuan: 'Unit',
@@ -726,15 +745,15 @@ export default function BaPemusnahanFormPage({ user }) {
                   </td>
                   <td className="px-3.5 py-2.5">
                     <select
-                      value={it.jenis_aset}
+                      value={normalizeJenisAset(it.jenis_aset)}
                       onChange={(e) => handleItemChange(idx, 'jenis_aset', e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#003580]"
                     >
-                      <option value="Hardware">Perangkat Keras (Hardware)</option>
-                      <option value="Storage">Media Penyimpanan (Storage)</option>
-                      <option value="Network">Perangkat Jaringan (Network)</option>
-                      <option value="Fisik">Aset Fisik Lainnya</option>
-                      <option value="Informasi/HC/SC">Informasi (HC/SC)</option>
+                      {JENIS_ASET_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </td>
                   <td className="px-3.5 py-2.5">

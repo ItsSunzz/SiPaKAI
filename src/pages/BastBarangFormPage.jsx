@@ -684,12 +684,16 @@ export default function BastBarangFormPage({ user }) {
         setSignatureError('PIN tanda tangan pembuat (signature_pin) wajib diisi.');
         return;
       }
-      if (signatureMode === 'upload' && !selectedSignatureFile && !hasServerSignature) {
-        setSignatureError('Harap pilih file gambar tanda tangan PNG/JPG terlebih dahulu.');
+      if (signatureMode === 'upload' && !selectedSignatureFile) {
+        setSignatureError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
         return;
       }
       if (signatureMode === 'draw' && !hasDrawnSignature) {
-        setSignatureError('Harap bubuhkan tanda tangan pada kotak tanda tangan digital.');
+        setSignatureError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+      if (signatureMode === 'saved' && !hasServerSignature) {
+        setSignatureError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
         return;
       }
       if (!isAgreementChecked) {

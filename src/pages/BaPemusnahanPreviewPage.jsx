@@ -27,6 +27,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+import SignatureSelector from '../components/SignatureSelector';
 
 export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -50,15 +51,30 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
 
   // Modal Signing States
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
-  const [signAsRole, setSignAsRole] = useState('v1');
+  const [notesInput, setNotesInput] = useState('Disetujui dan diverifikasi sesuai fisik barang.');
   const [pinInput, setPinInput] = useState('123456');
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState(null);
 
-  // Canvas TTD
+  // Canvas TTD & Signature Mode (3 Pilihan: draw | upload | saved)
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [selectedSignatureFile, setSelectedSignatureFile] = useState(null);
+  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'upload' | 'saved'
+  const [hasServerSignature, setHasServerSignature] = useState(false);
+  const [serverSignatureUrl, setServerSignatureUrl] = useState('');
+
+  // Sinkronisasi status tanda tangan profil user saat ini
+  useEffect(() => {
+    if (user?.has_signature || user?.signature_path) {
+      setHasServerSignature(true);
+      setServerSignatureUrl(api.getSignatureUrl(true));
+      setSignatureMode('saved');
+    } else {
+      setSignatureMode('draw');
+    }
+  }, [user]);
 
   // Sample fallback if doc not found
   const sampleDocFallback = {
@@ -156,7 +172,22 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
         setPdfBlobUrl(null);
       }
 
-      const blob = await api.previewPdf(payload);
+      let blob = null;
+      // Jika dokumen sudah ada di database, ambil PDF resmi langsung dari endpoint GET /documents/{id}/pdf
+      // agar seluruh stempel TTE yang sudah disetujui (Approver 1..4) otomatis tertempel di file PDF
+      if (documentData?.id && !isNaN(Number(documentData.id))) {
+        try {
+          blob = await api.getDocumentPdfBlob(documentData.id);
+        } catch (fetchErr) {
+          console.warn('Gagal memuat PDF dokumen tersimpan, mencoba endpoint draf preview-pdf:', fetchErr);
+        }
+      }
+
+      // Fallback jika dokumen baru draf belum tersimpan atau gagal
+      if (!blob) {
+        blob = await api.previewPdf(payload);
+      }
+
       const url = URL.createObjectURL(blob);
       setPdfBlobUrl(url);
     } catch (err) {
@@ -297,51 +328,79 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
     setHasDrawnSignature(false);
   };
 
-  // Handle Signing Execution
+  // Handle Signing Execution (Calling Backend API workflow action)
+  // Handle Signing Execution (Calling Backend API workflow action)
   const handleExecuteSign = async () => {
     if (!pinInput || pinInput.length < 6) {
       setSignError('Masukkan 6-digit PIN KAI Pass Anda.');
       return;
     }
 
+    // Validasi ketat tanda tangan tidak boleh kosong sesuai opsi yang dipilih
+    if (signatureMode === 'draw') {
+      if (!hasDrawnSignature) {
+        setSignError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'upload') {
+      if (!selectedSignatureFile) {
+        setSignError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
+        return;
+      }
+    } else if (signatureMode === 'saved') {
+      if (!hasServerSignature) {
+        setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
+        return;
+      }
+    }
+
     setIsSigning(true);
     setSignError(null);
 
     try {
-      await new Promise(r => setTimeout(r, 900));
+      // 1. Sinkronisasi berkas tanda tangan baru (goresan kanvas atau berkas unggahan) ke backend
+      if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
+        const blob = await new Promise((resolve) => {
+          canvasRef.current.toBlob(resolve, 'image/png');
+        });
+        if (blob) {
+          const formData = new FormData();
+          formData.append('signature', blob, 'signature_draw.png');
+          formData.append('signature_type', 'basah');
+          formData.append('pin', pinInput.trim());
+          await api.uploadSignature(formData);
+          setHasServerSignature(true);
+          setServerSignatureUrl(api.getSignatureUrl(true));
+        }
+      } else if (signatureMode === 'upload' && selectedSignatureFile) {
+        const formData = new FormData();
+        formData.append('signature', selectedSignatureFile);
+        formData.append('signature_type', 'basah');
+        formData.append('pin', pinInput.trim());
+        await api.uploadSignature(formData);
+        setHasServerSignature(true);
+        setServerSignatureUrl(api.getSignatureUrl(true));
+      }
 
-      const updatedDoc = { ...doc };
-      const nowStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
-
-      if (!updatedDoc.data) updatedDoc.data = {};
-      if (!updatedDoc.data.signatures) updatedDoc.data.signatures = {};
-
-      updatedDoc.data.signatures[signAsRole] = {
-        signed: true,
-        signed_at: nowStr,
-        signed_by: user?.name || 'Pejabat Otorisator',
-      };
-
-      updatedDoc.status = 'approved';
-      updatedDoc.status_label = 'Disahkan Penuh (Sah TTE BSrE)';
-
-      setDoc(updatedDoc);
-
-      // Update in localStorage
-      const localSaved = JSON.parse(localStorage.getItem('sipakai_dsp02_docs') || '[]');
-      const updatedList = localSaved.map(d => String(d.id) === String(doc.id) ? updatedDoc : d);
-      localStorage.setItem('sipakai_dsp02_docs', JSON.stringify(updatedList));
+      // 2. Eksekusi aksi workflow approval di backend
+      const res = await api.actionDocument(doc.id, {
+        action: 'approve',
+        notes: notesInput.trim() || 'Disetujui dan ditandatangani secara elektronik (BSrE).',
+        pin: pinInput.trim(),
+        next_approver_id: null, // Backend auto-forwards according to approval_chain
+      });
 
       setIsSignModalOpen(false);
-      setSuccessMessage('Tanda Tangan Elektronik BSrE berhasil dibubuhkan secara sah!');
-      setTimeout(() => setSuccessMessage(null), 4000);
+      setSuccessMessage(res?.message || 'Tanda Tangan Elektronik berhasil dibubuhkan secara sah dan dokumen dialirkan ke tahapan berikutnya!');
+      setTimeout(() => setSuccessMessage(null), 5000);
 
-      // Refresh PDF preview
-      await generateBackendPdfPreview(updatedDoc);
+      // 3. Muat ulang data dokumen dan hasil cetak PDF ber-TTD resmi terbaru
+      await loadData();
 
       if (onDocumentUpdated) onDocumentUpdated();
     } catch (err) {
-      setSignError(err.message || 'Terjadi kesalahan saat memproses tanda tangan.');
+      console.error('Gagal memproses tanda tangan ke backend:', err);
+      setSignError(err.message || 'Validasi tanda tangan gagal atau bukan giliran otorisasi Anda.');
     } finally {
       setIsSigning(false);
     }
@@ -368,6 +427,36 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const v2User = apiUsers.find(u => Number(u.id) === Number(data.verifikator_2_id)) || data.saksi_1 || { name: 'Pengelola Aset TI', nip: '41920' };
   const v3User = apiUsers.find(u => Number(u.id) === Number(data.verifikator_3_id)) || data.saksi_2 || { name: 'Atasan Pengguna Aset', nip: '62104' };
   const v4User = apiUsers.find(u => Number(u.id) === Number(data.verifikator_4_id)) || data.penanggung_jawab || { name: 'Ir. Bambang Suryo Pratama, M.T.', nip: '48901' };
+
+  // Approval chain & active approver validation
+  const currentApproverId = doc.current_approver_id || doc.penyetuju_id;
+  const isCurrentApprover = Boolean(user?.id && currentApproverId && Number(user.id) === Number(currentApproverId));
+  const canAct = isPending && isCurrentApprover;
+
+  const chain = doc.data?.approval_chain || [
+    doc.data?.verifikator_1_id,
+    doc.data?.verifikator_2_id,
+    doc.data?.verifikator_3_id,
+    doc.data?.verifikator_4_id,
+  ].filter(Boolean);
+
+  const currentStepIndex = chain.findIndex(id => Number(id) === Number(currentApproverId));
+  const currentStepNumber = currentStepIndex !== -1 ? currentStepIndex + 1 : 1;
+  const currentApproverUser = apiUsers.find(u => Number(u.id) === Number(currentApproverId));
+  const approvalsList = doc.approvals || doc.persetujuan || [];
+
+  const getStepStatus = (vUser, stepIdx) => {
+    if (!vUser?.id) return { isSigned: false, isCurrent: false, label: 'Belum Ditentukan' };
+    const isSigned = isApproved || approvalsList.some(a => 
+      Number(a.approver_id || a.user_id) === Number(vUser.id) && 
+      (a.action === 'approved' || a.action === 'APPROVED' || a.aksi === 'approved')
+    );
+    if (isSigned) return { isSigned: true, isCurrent: false, label: 'TTE Selesai (Sah)' };
+    if (isPending && Number(currentApproverId) === Number(vUser.id)) {
+      return { isSigned: false, isCurrent: true, label: isCurrentApprover ? 'Giliran Anda (Aktif)' : 'Sedang Diproses' };
+    }
+    return { isSigned: false, isCurrent: false, label: 'Antrean Tahap ' + (stepIdx + 1) };
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-5 pb-24 select-none">
@@ -454,16 +543,24 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
             </button>
           )}
 
-          {/* Tandatangani Button if pending */}
-          {!isApproved && (
+          {/* Tandatangani Button if pending and user is the current active approver */}
+          {isPending && canAct && (
             <button
               type="button"
               onClick={() => setIsSignModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f05a22] hover:bg-[#d94e1b] text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f05a22] hover:bg-[#d94e1b] text-white text-xs font-bold rounded-xl shadow-xs transition-colors animate-pulse"
+              title={`Giliran Anda untuk menandatangani Tahap ${currentStepNumber}`}
             >
               <PenTool className="w-4 h-4" />
-              <span>Tandatangani (TTE e-Sign)</span>
+              <span>Tandatangani Tahap {currentStepNumber} (TTE e-Sign)</span>
             </button>
+          )}
+
+          {isPending && !canAct && (
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-50/80 border border-amber-200 text-amber-800 text-xs font-bold rounded-xl">
+              <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+              <span>Menunggu TTE: {currentApproverUser?.name ? `${currentApproverUser.name} (Tahap ${currentStepNumber})` : `Tahap ${currentStepNumber}`}</span>
+            </div>
           )}
 
           {/* Unduh PDF Button */}
@@ -583,65 +680,108 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
 
           {/* Stepper Status 4 Pihak Sesuai Backend */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Step 1: Tim Pemusnahan */}
-            <div className={`p-4 rounded-xl border ${isApproved ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
-                  Tahap 1
-                </span>
-                {isApproved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className="w-4 h-4 text-slate-400" />}
-              </div>
-              <h4 className="text-xs font-bold text-slate-900">Tim Pemusnahan / Admin</h4>
-              <p className="text-[11px] text-slate-600 mt-0.5">{v1User?.name}</p>
-              <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${isApproved ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
-                {isApproved ? 'TTE Selesai' : 'Tahap Awal'}
-              </span>
-            </div>
+            {(() => {
+              const s1 = getStepStatus(v1User, 0);
+              const s2 = getStepStatus(v2User, 1);
+              const s3 = getStepStatus(v3User, 2);
+              const s4 = getStepStatus(v4User, 3);
 
-            {/* Step 2: Pengelola Aset */}
-            <div className={`p-4 rounded-xl border ${isApproved ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
-                  Tahap 2
-                </span>
-                {isApproved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className="w-4 h-4 text-slate-400" />}
-              </div>
-              <h4 className="text-xs font-bold text-slate-900">Pengelola Aset</h4>
-              <p className="text-[11px] text-slate-600 mt-0.5">{v2User?.name}</p>
-              <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${isApproved ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                {isApproved ? 'TTE Selesai' : 'Verifikasi Aset'}
-              </span>
-            </div>
+              return (
+                <>
+                  {/* Step 1: Tim Pemusnahan */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    s1.isSigned ? 'bg-emerald-50/70 border-emerald-300' :
+                    s1.isCurrent ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/40 shadow-xs' :
+                    'bg-slate-50/70 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 font-mono">
+                        Tahap 1
+                      </span>
+                      {s1.isSigned ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className={`w-4 h-4 ${s1.isCurrent ? 'text-amber-600 animate-spin' : 'text-slate-400'}`} />}
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900">Tim Pemusnahan / Admin</h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5 truncate">{v1User?.name}</p>
+                    <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${
+                      s1.isSigned ? 'bg-emerald-100 text-emerald-800' :
+                      s1.isCurrent ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                      'bg-slate-200 text-slate-600'
+                    }`}>
+                      {s1.label}
+                    </span>
+                  </div>
 
-            {/* Step 3: Atasan Pengguna */}
-            <div className={`p-4 rounded-xl border ${isApproved ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
-                  Tahap 3
-                </span>
-                {isApproved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className="w-4 h-4 text-slate-400" />}
-              </div>
-              <h4 className="text-xs font-bold text-slate-900">Atasan Pengguna Aset</h4>
-              <p className="text-[11px] text-slate-600 mt-0.5">{v3User?.name}</p>
-              <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${isApproved ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                {isApproved ? 'TTE Selesai' : 'Menunggu Atasan'}
-              </span>
-            </div>
+                  {/* Step 2: Pengelola Aset */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    s2.isSigned ? 'bg-emerald-50/70 border-emerald-300' :
+                    s2.isCurrent ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/40 shadow-xs' :
+                    'bg-slate-50/70 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 font-mono">
+                        Tahap 2
+                      </span>
+                      {s2.isSigned ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className={`w-4 h-4 ${s2.isCurrent ? 'text-amber-600 animate-spin' : 'text-slate-400'}`} />}
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900">Pengelola Aset</h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5 truncate">{v2User?.name}</p>
+                    <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${
+                      s2.isSigned ? 'bg-emerald-100 text-emerald-800' :
+                      s2.isCurrent ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                      'bg-slate-200 text-slate-600'
+                    }`}>
+                      {s2.label}
+                    </span>
+                  </div>
 
-            {/* Step 4: VP IT Operation */}
-            <div className={`p-4 rounded-xl border ${isApproved ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
-                  Tahap 4
-                </span>
-                {isApproved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className="w-4 h-4 text-slate-400" />}
-              </div>
-              <h4 className="text-xs font-bold text-slate-900">VP IT Operation</h4>
-              <p className="text-[11px] text-slate-600 mt-0.5">{v4User?.name}</p>
-              <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${isApproved ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                {isApproved ? 'TTE Selesai' : 'Penyetuju Akhir'}
-              </span>
-            </div>
+                  {/* Step 3: Atasan Pengguna */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    s3.isSigned ? 'bg-emerald-50/70 border-emerald-300' :
+                    s3.isCurrent ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/40 shadow-xs' :
+                    'bg-slate-50/70 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 font-mono">
+                        Tahap 3
+                      </span>
+                      {s3.isSigned ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className={`w-4 h-4 ${s3.isCurrent ? 'text-amber-600 animate-spin' : 'text-slate-400'}`} />}
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900">Atasan Pengguna Aset</h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5 truncate">{v3User?.name}</p>
+                    <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${
+                      s3.isSigned ? 'bg-emerald-100 text-emerald-800' :
+                      s3.isCurrent ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                      'bg-slate-200 text-slate-600'
+                    }`}>
+                      {s3.label}
+                    </span>
+                  </div>
+
+                  {/* Step 4: VP IT Operation */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    s4.isSigned ? 'bg-emerald-50/70 border-emerald-300' :
+                    s4.isCurrent ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/40 shadow-xs' :
+                    'bg-slate-50/70 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 font-mono">
+                        Tahap 4
+                      </span>
+                      {s4.isSigned ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Clock className={`w-4 h-4 ${s4.isCurrent ? 'text-amber-600 animate-spin' : 'text-slate-400'}`} />}
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900">VP IT Operation</h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5 truncate">{v4User?.name}</p>
+                    <span className={`inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded ${
+                      s4.isSigned ? 'bg-emerald-100 text-emerald-800' :
+                      s4.isCurrent ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                      'bg-slate-200 text-slate-600'
+                    }`}>
+                      {s4.label}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -671,49 +811,48 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
             )}
 
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Pilih Peran Penandatangan
-                </label>
-                <select
-                  value={signAsRole}
-                  onChange={(e) => setSignAsRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003580]"
-                >
-                  <option value="v1">Tim Pemusnahan / Administrator ({v1User?.name})</option>
-                  <option value="v2">Pengelola Aset ({v2User?.name})</option>
-                  <option value="v3">Atasan Pengguna Aset ({v3User?.name})</option>
-                  <option value="v4">VP IT Operation / Pimpinan Unit SI ({v4User?.name})</option>
-                </select>
+              {/* Info Penandatangan Sesuai Giliran Chained Workflow */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#003580] text-white font-mono">
+                    Tahap {currentStepNumber} dari {chain.length || 4}
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded">
+                    Giliran Anda Aktif
+                  </span>
+                </div>
+                <div className="font-bold text-slate-900 mt-1">{user?.name}</div>
+                <div className="text-[11px] text-slate-600">
+                  NIP: {user?.nip || '-'} &bull; {typeof user?.jabatan === 'object' ? user?.jabatan?.nama : (user?.jabatan || 'Pejabat Otorisator')}
+                </div>
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-slate-700">Goresan Tanda Tangan</label>
-                  <button
-                    type="button"
-                    onClick={clearCanvas}
-                    className="text-[11px] text-rose-600 hover:underline flex items-center gap-1"
-                  >
-                    <Eraser className="w-3 h-3" /> Hapus
-                  </button>
-                </div>
-                <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50/50">
-                  <canvas
-                    ref={canvasRef}
-                    width={380}
-                    height={120}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    className="w-full h-28 cursor-crosshair touch-none bg-white"
-                  />
-                </div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Telaah Disposisi
+                </label>
+                <input
+                  type="text"
+                  placeholder="Catatan verifikasi..."
+                  value={notesInput}
+                  onChange={(e) => setNotesInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003580]"
+                />
               </div>
+
+              {/* Komponen Pemilih Tanda Tangan: 3 Opsi dengan Validasi Ketat */}
+              <SignatureSelector
+                mode={signatureMode}
+                setMode={setSignatureMode}
+                canvasRef={canvasRef}
+                hasDrawn={hasDrawnSignature}
+                setHasDrawn={setHasDrawnSignature}
+                selectedFile={selectedSignatureFile}
+                setSelectedFile={setSelectedSignatureFile}
+                hasServerSignature={hasServerSignature}
+                serverSignatureUrl={serverSignatureUrl}
+                user={user}
+              />
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
