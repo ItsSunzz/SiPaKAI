@@ -96,14 +96,27 @@ export default function BastBarangFormPage({ user }) {
     nama_unit: '',
     wilayah: ''
   });
-  // --- 2. Field Data: Penyerah (manual input) ---
+  // --- 2. Field Data: Penyerah (auto dari user login) ---
   const [penyerah, setPenyerah] = useState({
-    nama: '',
-    nipp: '',
-    jabatan: '',
-    tempat_kedudukan: '',
-    personal_area: ''
+    nama: user?.name || user?.nama || '',
+    nipp: user?.nip || '',
+    jabatan: user?.roleLabel || user?.jabatan || 'Staff Unit TI',
+    tempat_kedudukan: user?.location || user?.unit_kerja || 'Daop 6 Yogyakarta',
+    personal_area: user?.location || user?.unit_kerja || 'PA01'
   });
+
+  useEffect(() => {
+    if (user && !id) {
+      setPenyerah((prev) => ({
+        ...prev,
+        nama: prev.nama || user.name || user.nama || '',
+        nipp: prev.nipp || user.nip || '',
+        jabatan: prev.jabatan || user.roleLabel || user.jabatan || 'Staff Unit TI',
+        tempat_kedudukan: prev.tempat_kedudukan || user.location || user.unit_kerja || 'Daop 6 Yogyakarta',
+        personal_area: prev.personal_area || user.location || user.unit_kerja || 'PA01',
+      }));
+    }
+  }, [user, id]);
   // --- 3. Field Data: Penerima (manual input) ---
   const [penerima, setPenerima] = useState({
     nama: '',

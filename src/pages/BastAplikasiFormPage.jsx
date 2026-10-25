@@ -72,14 +72,27 @@ export default function BastAplikasiFormPage({ user }) {
     tanggal_pelaksanaan: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
   });
 
-  // 2. Pihak Penyerah (Yang Menyerahkan)
+  // 2. Pihak Penyerah (Yang Menyerahkan - auto dari user login)
   const [penyerah, setPenyerah] = useState({
-    nama: user?.name || 'Ahmad Fauzi Setiawan',
-    nipp: user?.nip || '54892',
-    jabatan: user?.roleLabel || 'Spv Operasional Infrastruktur TI',
-    tempat_kedudukan: user?.location || 'Unit Kantor Pusat Bandung',
-    personal_area: 'PA-0100 Bandung'
+    nama: user?.name || user?.nama || '',
+    nipp: user?.nip || '',
+    jabatan: user?.roleLabel || user?.jabatan || 'Spv Operasional Infrastruktur TI',
+    tempat_kedudukan: user?.location || user?.unit_kerja || 'Unit Kantor Pusat Bandung',
+    personal_area: user?.location || user?.unit_kerja || 'PA-0100 Bandung'
   });
+
+  useEffect(() => {
+    if (user && !id) {
+      setPenyerah((prev) => ({
+        ...prev,
+        nama: user.name || user.nama || prev.nama,
+        nipp: user.nip || prev.nipp,
+        jabatan: user.roleLabel || user.jabatan || prev.jabatan,
+        tempat_kedudukan: user.location || user.unit_kerja || prev.tempat_kedudukan,
+        personal_area: user.location || user.unit_kerja || prev.personal_area,
+      }));
+    }
+  }, [user, id]);
 
   // 3. User Aplikasi yang Diserahkan (Tabel Akun)
   const [accounts, setAccounts] = useState([
