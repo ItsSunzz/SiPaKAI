@@ -1,1044 +1,1389 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Calendar, 
-  MapPin, 
-  RefreshCw, 
-  Flame, 
-  Monitor, 
-  CheckCircle2, 
-  Circle, 
-  Plus, 
-  Trash2, 
-  Download, 
-  FileSpreadsheet, 
-  FileText, 
-  Check, 
-  Lock, 
-  ShieldCheck, 
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  FileText,
+  Plus,
+  Trash2,
+  CheckCircle2,
   AlertTriangle,
-  Scale,
   ArrowLeft,
-  X
+  Loader2,
+  Building2,
+  UserCheck,
+  Calendar,
+  Layers,
+  Save,
+  Check,
+  Search,
+  X,
+  Eye,
+  FileDown,
+  RefreshCw,
+  Sparkles,
+  ClipboardList,
+  ShieldCheck,
+  Lock,
+  PenTool
 } from 'lucide-react';
 import { api } from '../services/api';
+import SignatureSelector from '../components/SignatureSelector';
 
 export default function PenghapusanFormPage({ user }) {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const isEditMode = Boolean(id);
 
-  // 1. Form Header States
-  const [tanggal, setTanggal] = useState('2025-10-30');
-  const [namaPelaksana, setNamaPelaksana] = useState(user?.name || 'Fajar Prasetyo, S.Kom');
-  const [nippPelaksana, setNippPelaksana] = useState(user?.nip || '62489');
-  const [jabatanPelaksana, setJabatanPelaksana] = useState('Pranata Komputer Madya / Koordinator Tim Eksekusi TI');
-  const [lokasiEksekusi, setLokasiEksekusi] = useState('Gudang Logistik & Server Room DAOP 1 Jakarta, Stasiun Juanda Lt. 3, Jl. Ir. H. Juanda No. 1');
+  const [isLoading, setIsLoading] = useState(isEditMode);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
 
-  // 2. Klasifikasi Kondisi (Dimusnahkan vs Tidak Layak/Rusak)
-  const [kondisi, setKondisi] = useState('Dimusnahkan'); // 'Dimusnahkan' | 'Tidak Layak-Rusak'
+  // Approver / Users list from backend
+  const [apiUsers, setApiUsers] = useState([]);
+  const [isLoadingApprovers, setIsLoadingApprovers] = useState(false);
 
-  // 3. Rincian Barang
+  // Modal Import dari DSP-02
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [dsp02List, setDsp02List] = useState([]);
+  const [isLoadingDsp02, setIsLoadingDsp02] = useState(false);
+
+  // Modal PDF Preview
+  const [isPreviewPdfModalOpen, setIsPreviewPdfModalOpen] = useState(false);
+  const [previewPdfBlobUrl, setPreviewPdfBlobUrl] = useState(null);
+  const [isLoadingPreviewPdf, setIsLoadingPreviewPdf] = useState(false);
+  const [previewPdfError, setPreviewPdfError] = useState(null);
+
+  // Modal TTE Pembuat / Pelaksana (Tanda tangan manual saat submit)
+  const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+  const [signNotes, setSignNotes] = useState('Mengajukan formulir penghapusan aset TI sesuai fisik barang.');
+  const [pinInput, setPinInput] = useState('123456');
+  const [signError, setSignError] = useState(null);
+
+  // Canvas TTD & Signature Mode (3 Pilihan: draw | upload | saved)
+  const canvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [selectedSignatureFile, setSelectedSignatureFile] = useState(null);
+  const [signatureMode, setSignatureMode] = useState('draw'); // 'draw' | 'upload' | 'saved'
+  const [hasServerSignature, setHasServerSignature] = useState(false);
+  const [serverSignatureUrl, setServerSignatureUrl] = useState('');
+
+  // Sinkronisasi status tanda tangan profil user saat ini
+  useEffect(() => {
+    if (user?.has_signature || user?.signature_path) {
+      setHasServerSignature(true);
+      setServerSignatureUrl(api.getSignatureUrl(true));
+      setSignatureMode('saved');
+    } else {
+      setSignatureMode('draw');
+    }
+  }, [user]);
+
+  // --- Form State ---
+  // 1. Identitas Dokumen & Lokasi
+  const [formData, setFormData] = useState({
+    nomor_referensi: 'BA-PMS/TI/DAOP1/10-2026/0014',
+    tanggal: new Date().toISOString().split('T')[0],
+    lokasi: user?.location || 'Gudang Logistik & Server Room Juanda Lt. 3, Jakarta Pusat',
+    nama_pelaksana: user?.name || '',
+    nipp_pelaksana: user?.nip || '',
+    jabatan_pelaksana: user?.roleLabel || 'Koordinator Tim Eksekusi TI',
+    status_kondisi: 'Dimusnahkan', // 'Dimusnahkan' | 'Tidak Layak-Rusak'
+  });
+
+  // 2. Saksi-saksi
+  const [saksi1, setSaksi1] = useState({
+    nama: 'Slamet Riyadi',
+    nipp: '49201',
+    jabatan: 'Pengawas Internal / Auditor SPI'
+  });
+  const [saksi2, setSaksi2] = useState({
+    nama: 'Tri Wahyuni, S.T',
+    nipp: '55120',
+    jabatan: 'Staff Seksi Keuangan & Aset'
+  });
+
+  // 3. Verifikator Pejabat
+  const [verifikator1, setVerifikator1] = useState(''); // Disetujui (Tahap 1)
+  const [verifikator2, setVerifikator2] = useState(''); // Mengetahui (Tahap 2)
+
+  // 4. Items (Aset yang Dihapus)
   const [items, setItems] = useState([
     {
       id: 1,
-      nama: 'Server Dell PowerEdge R740 2U',
-      spesifikasi: 'Xeon Silver 4210R / 64GB DDR4 / Dual PSU',
-      jumlah: '1',
-      satuan: 'Unit',
-      serialNumber: 'SN-98214-KAI-SRV',
-      noInventarisSap: 'AST-TI-2018-0941',
-      lokasiTerakhir: 'Rack 04 - Server Farm Juanda',
-      statusSap: 'Scrap (Nilai Buku Rp 0)',
-      statusSapType: 'scrap'
+      nama_barang: 'Server Dell PowerEdge R740 2U',
+      jumlah: 1,
+      serial_nomor: 'SN-98214-KAI-SRV',
+      no_inventaris: 'AST-TI-2018-0941',
+      lokasi_aset: 'Rack 04 - Server Farm Juanda',
+      keterangan: 'Xeon Silver 4210R / 64GB DDR4 (Scrap Afval)'
     },
     {
       id: 2,
-      nama: 'Cisco Catalyst 3850 48-Port PoE',
-      spesifikasi: 'Switch Layer 3 Distribusi Stasiun Gambir',
-      jumlah: '1',
-      satuan: 'Unit',
-      serialNumber: 'MAC-7721-CC-081',
-      noInventarisSap: 'AST-TI-2019-1102',
-      lokasiTerakhir: 'Wiring Closet Lt. 2 DAOP 1',
-      statusSap: 'Hapus Buku Aktiva',
-      statusSapType: 'hapus_buku'
-    },
-    {
-      id: 3,
-      nama: 'Harddisk Enterprise SAS 1.2TB 10K',
-      spesifikasi: 'Penyimpanan Storage SAN Ticketing (x4 Modul)',
-      jumlah: '4',
-      satuan: 'Pcs',
-      serialNumber: 'HD-SAS-KAI-8082-SET',
-      noInventarisSap: 'AST-TI-2020-0054',
-      lokasiTerakhir: 'Storage Shelf Alpha-3 Juanda',
-      statusSap: 'Terhapus SAP FI-AA',
-      statusSapType: 'terhapus'
+      nama_barang: 'Cisco Catalyst 3850 48-Port PoE',
+      jumlah: 1,
+      serial_nomor: 'MAC-7721-CC-081',
+      no_inventaris: 'AST-TI-2019-1102',
+      lokasi_aset: 'Wiring Closet Lt. 2 DAOP 1',
+      keterangan: 'Switch Layer 3 Distribusi (Rusak Permanen)'
     }
   ]);
 
-  // Modal / Add item states
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newItem, setNewItem] = useState({
-    nama: '',
-    spesifikasi: '',
-    jumlah: '1',
-    satuan: 'Unit',
-    serialNumber: '',
-    noInventarisSap: '',
-    lokasiTerakhir: '',
-    statusSap: 'Scrap (Nilai Buku Rp 0)',
-    statusSapType: 'scrap'
-  });
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
-  // 4. Saksi Kehadiran
-  const [saksiList, setSaksiList] = useState([
-    {
-      id: 1,
-      kategori: 'SAKSI I (AUDIT SPI)',
-      nama: 'Slamet Riyadi',
-      nipp: '49201',
-      jabatan: 'Pengawas Internal / Auditor SPI KAI',
-      absensi: '09:14 WIB',
-      isHadir: true,
-      tteStatus: 'TTE Valid'
-    },
-    {
-      id: 2,
-      kategori: 'SAKSI II (KEUANGAN)',
-      nama: 'Tri Wahyuni, S.T',
-      nipp: '55120',
-      jabatan: 'Staff Seksi Keuangan & Aset DAOP 1',
-      absensi: '09:20 WIB',
-      isHadir: true,
-      tteStatus: 'TTE Valid'
-    },
-    {
-      id: 3,
-      kategori: 'SAKSI III (PENGAMANAN)',
-      nama: 'Agus Supriyatna',
-      nipp: '61099',
-      jabatan: 'Petugas Pengamanan / Polsuksa DAOP 1',
-      absensi: '09:18 WIB',
-      isHadir: true,
-      tteStatus: 'TTE Valid'
-    }
-  ]);
+  // Load approvers
+  useEffect(() => {
+    const fetchApprovers = async () => {
+      setIsLoadingApprovers(true);
+      try {
+        const res = await api.getApprovers('all=1');
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        setApiUsers(list);
 
-  // 5. Otorisasi BSrE / TTE States
-  const [vpSigned, setVpSigned] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedbackMsg, setFeedbackMsg] = useState(null);
+        if (list.length >= 2 && !verifikator1 && !verifikator2) {
+          setVerifikator1(String(list[0].id));
+          setVerifikator2(String(list[1].id));
+        } else if (list.length === 1 && !verifikator1) {
+          setVerifikator1(String(list[0].id));
+        }
+      } catch (err) {
+        console.warn('Gagal memuat daftar approvers:', err);
+      } finally {
+        setIsLoadingApprovers(false);
+      }
+    };
+    fetchApprovers();
+  }, []);
 
-  // Sync SSO handler
+  // Load document in edit mode
+  useEffect(() => {
+    if (!isEditMode) return;
+    const loadDoc = async () => {
+      setIsLoading(true);
+      try {
+        const res = await api.getDocument(id);
+        const doc = res?.document || res;
+        if (doc) {
+          const d = doc.data || {};
+          setFormData({
+            nomor_referensi: d.nomor_referensi || d.ref_ba || '',
+            tanggal: d.tanggal ? String(d.tanggal).split('T')[0] : new Date().toISOString().split('T')[0],
+            lokasi: d.lokasi || '',
+            nama_pelaksana: d.nama_pelaksana || doc.requester?.name || '',
+            nipp_pelaksana: d.nipp_pelaksana || doc.requester?.nip || '',
+            jabatan_pelaksana: d.jabatan_pelaksana || 'Pelaksana TI',
+            status_kondisi: d.status_kondisi || 'Dimusnahkan',
+          });
+
+          if (d.verifikator_1_id) setVerifikator1(String(d.verifikator_1_id));
+          if (d.verifikator_2_id) setVerifikator2(String(d.verifikator_2_id));
+
+          // Parse saksi secara aman (mendukung string, array of strings, array of objects, maupun format lainnya)
+          if (d.saksi) {
+            let saksiItems = [];
+            if (typeof d.saksi === 'string') {
+              saksiItems = d.saksi.split(',').map(s => s.trim()).filter(Boolean);
+            } else if (Array.isArray(d.saksi)) {
+              saksiItems = d.saksi.map(s => typeof s === 'string' ? s.trim() : (s?.nama || '')).filter(Boolean);
+            }
+
+            if (saksiItems[0]) {
+              const m1 = String(saksiItems[0]).replace(/^[0-9]+\.\s*/, '');
+              const [nm, np] = m1.includes('(') ? m1.split('(') : [m1, ''];
+              setSaksi1({
+                nama: nm ? nm.trim() : m1,
+                nipp: np ? np.replace(')', '').replace(/NIPP\s*/i, '').trim() : '',
+                jabatan: 'Saksi I'
+              });
+            }
+            if (saksiItems[1]) {
+              const m2 = String(saksiItems[1]).replace(/^[0-9]+\.\s*/, '');
+              const [nm, np] = m2.includes('(') ? m2.split('(') : [m2, ''];
+              setSaksi2({
+                nama: nm ? nm.trim() : m2,
+                nipp: np ? np.replace(')', '').replace(/NIPP\s*/i, '').trim() : '',
+                jabatan: 'Saksi II'
+              });
+            }
+          }
+
+          const itemsArr = doc.items || d.items || [];
+          if (itemsArr.length > 0) {
+            setItems(itemsArr.map((it, idx) => ({
+              id: it.id || idx + 1,
+              nama_barang: it.nama_barang || it.nama_aset || '',
+              jumlah: Number(it.jumlah) || 1,
+              serial_nomor: it.serial_nomor || '-',
+              no_inventaris: it.no_inventaris || it.id_aset || '-',
+              lokasi_aset: it.lokasi_aset || d.lokasi || '-',
+              keterangan: it.keterangan || '-',
+            })));
+          }
+        }
+      } catch (err) {
+        setErrorMessage('Gagal memuat dokumen: ' + (err.message || 'Terjadi kesalahan sistem'));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadDoc();
+  }, [id, isEditMode]);
+
+  // Sync with SSO User
   const handleSyncSSO = () => {
     if (user) {
-      setNamaPelaksana(user.name);
-      setNippPelaksana(user.nip);
-      setJabatanPelaksana(user.roleLabel || 'Pranata Komputer Madya / Koordinator Tim Eksekusi TI');
-    }
-    setFeedbackMsg('Data personil berhasil disinkronkan dengan SSO KAI');
-    setTimeout(() => setFeedbackMsg(null), 3000);
-  };
-
-  // Item management
-  const handleRemoveItem = (id) => {
-    setItems(items.filter(item => item.id !== id));
-  };
-
-  const handleAddItem = () => {
-    if (!newItem.nama) return;
-    setItems([
-      ...items,
-      {
-        ...newItem,
-        id: Date.now()
-      }
-    ]);
-    setIsAddModalOpen(false);
-    setNewItem({
-      nama: '',
-      spesifikasi: '',
-      jumlah: '1',
-      satuan: 'Unit',
-      serialNumber: '',
-      noInventarisSap: '',
-      lokasiTerakhir: '',
-      statusSap: 'Scrap (Nilai Buku Rp 0)',
-      statusSapType: 'scrap'
-    });
-  };
-
-  const handleImportDSP02 = () => {
-    const localSaved = JSON.parse(localStorage.getItem('sipakai_dsp02_docs') || '[]');
-    let imported = [];
-    if (localSaved.length > 0 && localSaved[0].items && localSaved[0].items.length > 0) {
-      imported = localSaved[0].items.map((it, idx) => ({
-        id: Date.now() + idx + 1,
-        nama: it.nama_aset || 'Aset TI Terkait',
-        spesifikasi: it.kategori || 'Perangkat Keras TI',
-        jumlah: String(it.jumlah || 1),
-        satuan: it.satuan || 'Unit',
-        serialNumber: it.serial_number || it.sn || `SN-${idx + 101}`,
-        noInventarisSap: it.no_inventaris || it.id_aset || `AST-TI-2018-091${idx}`,
-        lokasiTerakhir: localSaved[0].lokasi || 'Workshop Balai Yasa Manggarai',
-        statusSap: 'Scrap (Nilai Buku Rp 0)',
-        statusSapType: 'scrap'
+      setFormData(prev => ({
+        ...prev,
+        nama_pelaksana: user.name || user.nama || prev.nama_pelaksana,
+        nipp_pelaksana: user.nip || prev.nipp_pelaksana,
+        jabatan_pelaksana: user.roleLabel || prev.jabatan_pelaksana,
+        lokasi: user.location || prev.lokasi,
       }));
-    } else {
-      imported = [
-        {
-          id: Date.now() + 1,
-          nama: 'Hard Disk Enterprise SAS 600GB (15k RPM)',
-          spesifikasi: 'Storage SAS Server Farm Juanda',
-          jumlah: '8',
-          satuan: 'Unit',
-          serialNumber: 'SN-WD-8812901-KAI',
-          noInventarisSap: 'AST-TI-2018-0912',
-          lokasiTerakhir: 'Workshop TI Balai Yasa Manggarai',
-          statusSap: 'Scrap (Nilai Buku Rp 0)',
-          statusSapType: 'scrap'
-        },
-        {
-          id: Date.now() + 2,
-          nama: 'Switch HP ProCurve 2520G 24-PoE',
-          spesifikasi: 'Core Switch Sub-Stasiun Manggarai',
-          jumlah: '2',
-          satuan: 'Unit',
-          serialNumber: 'SN-HP-9982-MGR',
-          noInventarisSap: 'AST-TI-2017-0419',
-          lokasiTerakhir: 'Ruang Server Manggarai Lt. 2',
-          statusSap: 'Scrap (Nilai Buku Rp 0)',
-          statusSapType: 'scrap'
-        }
-      ];
+      showToast('Data personil berhasil disinkronkan dengan Akun Pengguna.');
     }
-    setItems([...items, ...imported]);
-    setFeedbackMsg(`${imported.length} item berhasil diimpor dari dokumen Berita Acara Pemusnahan (DSP-02)`);
-    setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
-  // TTE Sign VP Simulation
-  const handleSignVP = () => {
-    setVpSigned(true);
-    setFeedbackMsg('TTE BSrE (KAI Pass) berhasil dibubuhkan oleh VP IT Operation');
-    setTimeout(() => setFeedbackMsg(null), 3500);
+  // Add Item
+  const handleAddItem = () => {
+    const newItem = {
+      id: Date.now(),
+      nama_barang: '',
+      jumlah: 1,
+      serial_nomor: '',
+      no_inventaris: '',
+      lokasi_aset: formData.lokasi || '',
+      keterangan: '',
+    };
+    setItems([...items, newItem]);
   };
 
-  // Submit / Finalize
-  const handleSubmitForm = async (isDraft = false) => {
-    setIsSubmitting(true);
+  // Remove Item
+  const handleRemoveItem = (itemId) => {
+    if (items.length <= 1) {
+      alert('Dokumen minimal harus memiliki 1 rincian aset yang dihapus.');
+      return;
+    }
+    setItems(items.filter(it => it.id !== itemId));
+  };
+
+  // Update Item field
+  const handleItemChange = (itemId, field, value) => {
+    setItems(items.map(it => it.id === itemId ? { ...it, [field]: value } : it));
+  };
+
+  // Import from DSP-02
+  const handleOpenImportDsp02 = async () => {
+    setIsImportModalOpen(true);
+    setIsLoadingDsp02(true);
     try {
-      const payload = {
-        type: 'dsp03',
-        submit: !isDraft,
-        data: {
-          tanggal,
-          nama_pelaksana: namaPelaksana,
-          nipp_pelaksana: nippPelaksana,
-          jabatan_pelaksana: jabatanPelaksana,
-          lokasi: lokasiEksekusi,
-          status_kondisi: kondisi === 'Dimusnahkan' ? 'Dimusnahkan' : 'Tidak Layak-Rusak',
-          saksi: saksiList.map(s => `${s.nama} (${s.nipp})`).join(', ')
-        },
-        items: items.map(it => ({
-          nama_barang: it.nama,
-          jumlah: parseInt(it.jumlah, 10) || 1,
-          serial_nomor: it.serialNumber,
-          no_inventaris: it.noInventarisSap,
-          lokasi_aset: it.lokasiTerakhir,
-          keterangan: it.spesifikasi
-        }))
-      };
-
-      // Save to localStorage as persistent record
-      const currentSaved = JSON.parse(localStorage.getItem('sipakai_dsp03_docs') || '[]');
-      const newDocRecord = {
-        id: Date.now(),
-        number: `FR-PH/TI/DAOP1/10-2026/00${Math.floor(30 + Math.random() * 60)}`,
-        ref_ba: 'BA-PMS/TI/DAOP1/10-2026/0014',
-        type: 'dsp03',
-        form_code: 'FR.SM/TI/013.001',
-        tanggal,
-        pelaksana: {
-          nama: namaPelaksana,
-          nipp: nippPelaksana,
-          jabatan: jabatanPelaksana,
-          unit_kerja: user?.location || 'DAOP 1 Jakarta'
-        },
-        lokasi: lokasiEksekusi,
-        wilayah: 'DAOP 1 Jakarta',
-        klasifikasi: kondisi,
-        nilai_buku_total: 'Rp 0 (Scrap Nilai Penuh Disusutkan)',
-        sap_posting_status: isDraft ? 'Draf Rekonsiliasi' : 'Menunggu Validasi SAP',
-        status: isDraft ? 'draft' : 'pending',
-        status_label: isDraft ? 'Draf Formulir' : 'Menunggu Otorisasi VP IT',
-        items,
-        saksiList,
-        vpSigned
-      };
-      localStorage.setItem('sipakai_dsp03_docs', JSON.stringify([newDocRecord, ...currentSaved]));
-
-      setFeedbackMsg(isDraft ? 'Draf Formulir Penghapusan Aset TI tersimpan.' : 'Formulir Penghapusan Aset TI [DSP-03] berhasil difinalisasi dan dicatat!');
-      setTimeout(() => {
-        navigate('/penghapusan');
-      }, 1200);
+      const res = await api.getDocuments({ type: 'dsp02' }).catch(() => null);
+      setDsp02List(res?.data || []);
     } catch (err) {
-      alert('Gagal menyimpan dokumen: ' + err.message);
+      console.warn('Gagal mengambil daftar DSP-02:', err);
+    } finally {
+      setIsLoadingDsp02(false);
+    }
+  };
+
+  const handleSelectDsp02 = (doc) => {
+    if (!doc) return;
+    const d = doc.data || {};
+    const importedRef = doc.number || doc.nomor || d.nomor_referensi || 'BA-PMS/TI/2026/001';
+    const importedLokasi = d.lokasi || d.business_area || formData.lokasi;
+
+    const rawItems = doc.items || d.items || [];
+    let mappedItems = [];
+    if (rawItems.length > 0) {
+      mappedItems = rawItems.map((it, idx) => ({
+        id: Date.now() + idx,
+        nama_barang: it.nama_aset || it.nama_barang || 'Aset TI',
+        jumlah: Number(it.jumlah) || 1,
+        serial_nomor: it.serial_nomor || '-',
+        no_inventaris: it.id_aset || it.no_inventaris || '-',
+        lokasi_aset: importedLokasi,
+        keterangan: it.keterangan || it.metode_pemusnahan || 'Aset dari Berita Acara Pemusnahan',
+      }));
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      nomor_referensi: importedRef,
+      lokasi: importedLokasi,
+      status_kondisi: 'Dimusnahkan',
+    }));
+
+    if (mappedItems.length > 0) {
+      setItems(mappedItems);
+    }
+
+    setIsImportModalOpen(false);
+    showToast(`Data berhasil diimpor dari ${importedRef}`);
+  };
+
+  // Build Payload
+  const buildPayload = (isSubmit = true) => {
+    const saksiString = [
+      saksi1.nama ? `1. ${saksi1.nama}${saksi1.nipp ? ` (${saksi1.nipp})` : ''}` : '',
+      saksi2.nama ? `2. ${saksi2.nama}${saksi2.nipp ? ` (${saksi2.nipp})` : ''}` : '',
+    ].filter(Boolean).join(', ');
+
+    return {
+      type: 'dsp03',
+      submit: isSubmit,
+      approver_id: verifikator1 ? Number(verifikator1) : null,
+      data: {
+        nomor_referensi: formData.nomor_referensi || 'FR-PH/REF/001',
+        tanggal: formData.tanggal,
+        lokasi: formData.lokasi,
+        nama_pelaksana: formData.nama_pelaksana,
+        nipp_pelaksana: formData.nipp_pelaksana,
+        jabatan_pelaksana: formData.jabatan_pelaksana,
+        status_kondisi: formData.status_kondisi,
+        saksi: saksiString,
+        verifikator_1_id: verifikator1 ? Number(verifikator1) : null,
+        verifikator_2_id: verifikator2 ? Number(verifikator2) : null,
+      },
+      items: items.map(it => ({
+        nama_barang: it.nama_barang || 'Aset TI',
+        jumlah: parseInt(it.jumlah, 10) || 1,
+        serial_nomor: it.serial_nomor || '-',
+        no_inventaris: it.no_inventaris || '-',
+        lokasi_aset: it.lokasi_aset || formData.lokasi,
+        keterangan: it.keterangan || '-',
+      })),
+    };
+  };
+
+  // Preview PDF on-the-fly
+  const handlePreviewPdf = async () => {
+    setIsPreviewPdfModalOpen(true);
+    setIsLoadingPreviewPdf(true);
+    setPreviewPdfError(null);
+
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+
+    try {
+      const payload = buildPayload(false);
+      const blob = await api.previewPdf(payload);
+      const url = URL.createObjectURL(blob);
+      setPreviewPdfBlobUrl(url);
+    } catch (err) {
+      console.error('Gagal memuat pratinjau PDF:', err);
+      setPreviewPdfError(err.message || 'Gagal menghasilkan pratinjau PDF dari server backend.');
+    } finally {
+      setIsLoadingPreviewPdf(false);
+    }
+  };
+
+  const handleClosePreviewPdf = () => {
+    setIsPreviewPdfModalOpen(false);
+    if (previewPdfBlobUrl) {
+      URL.revokeObjectURL(previewPdfBlobUrl);
+      setPreviewPdfBlobUrl(null);
+    }
+  };
+
+  // Validate form fields prior to action
+  const validateForm = () => {
+    if (!formData.nama_pelaksana || !formData.nipp_pelaksana) {
+      alert('Nama dan NIPP personil pelaksana wajib diisi.');
+      return false;
+    }
+    if (!formData.lokasi) {
+      alert('Lokasi / Business Area wajib diisi.');
+      return false;
+    }
+    if (items.some(it => !it.nama_barang.trim())) {
+      alert('Semua baris aset wajib memiliki Nama Barang.');
+      return false;
+    }
+    return true;
+  };
+
+  // 1. Simpan Draf (tanpa tanda tangan / TTE)
+  const handleSaveDraft = async () => {
+    if (!validateForm()) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const payload = buildPayload(false);
+      let res;
+      if (isEditMode) {
+        res = await api.updateDocument(id, payload);
+      } else {
+        res = await api.createDocument(payload);
+      }
+
+      showToast('Draf Formulir Penghapusan Aset TI berhasil disimpan.');
+      const docId = res?.document?.id || res?.id || id;
+      setTimeout(() => {
+        if (docId) {
+          navigate(`/penghapusan/${docId}`);
+        } else {
+          navigate('/penghapusan');
+        }
+      }, 900);
+    } catch (err) {
+      console.error('Save draft error:', err);
+      let errMsg = err.message || 'Gagal menyimpan draf';
+      if (err.errors) errMsg += ': ' + Object.values(err.errors).flat().join(', ');
+      setErrorMessage(errMsg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // 2. Buka modal pengesahan TTE sebelum submit dokumen
+  const handleOpenSubmitModal = () => {
+    if (!validateForm()) return;
+    if (!verifikator1) {
+      alert('Harap pilih Pejabat Penyetuju (Verifikator I) terlebih dahulu.');
+      return;
+    }
+    if (!verifikator2) {
+      if (!confirm('Pejabat Mengetahui (Verifikator II) belum dipilih. Apakah Anda yakin ingin melanjutkan?')) {
+        return;
+      }
+    }
+    setSignError(null);
+    setIsSignModalOpen(true);
+  };
+
+  // 3. Eksekusi TTE Pembuat + Submit Berantai ke Backend
+  const handleExecuteSignAndSubmit = async (e) => {
+    e.preventDefault();
+    setSignError(null);
+
+    // Validasi tanda tangan ketat
+    if (signatureMode === 'draw' && !hasDrawnSignature) {
+      setSignError('Harap goreskan tanda tangan Anda pada kanvas terlebih dahulu.');
+      return;
+    }
+    if (signatureMode === 'upload' && !selectedSignatureFile) {
+      setSignError('Harap pilih berkas gambar tanda tangan Anda (PNG/JPG).');
+      return;
+    }
+    if (signatureMode === 'saved' && !hasServerSignature) {
+      setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Pilih opsi Goresan atau Unggah.');
+      return;
+    }
+    if (!pinInput || pinInput.length < 4) {
+      setSignError('PIN KAI Pass minimal 4 digit.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Step A: Upload signature to user's profile if newly drawn or uploaded
+      if (signatureMode === 'draw' && canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL('image/png');
+        const resBlob = await fetch(dataUrl);
+        const blob = await resBlob.blob();
+        const formDataUpload = new FormData();
+        formDataUpload.append('signature', blob, 'signature_pelaksana.png');
+        formDataUpload.append('pin', pinInput);
+        await api.uploadSignature(formDataUpload);
+      } else if (signatureMode === 'upload' && selectedSignatureFile) {
+        const formDataUpload = new FormData();
+        formDataUpload.append('signature', selectedSignatureFile);
+        formDataUpload.append('pin', pinInput);
+        await api.uploadSignature(formDataUpload);
+      }
+
+      // Step B: Simpan & Ajukan Dokumen ke Backend
+      const payload = {
+        ...buildPayload(true),
+        note: signNotes || 'Mengajukan formulir penghapusan aset TI.',
+        signature_pin: pinInput,
+      };
+
+      let finalDocId = id;
+
+      if (isEditMode) {
+        // 1. Simpan update data
+        await api.updateDocument(id, payload);
+        // 2. Submit dokumen agar status beralih dari draft ke in_review dan nomor dokumen dibuat
+        await api.submitDocument(id, {
+          approver_id: Number(verifikator1),
+          note: signNotes,
+        });
+      } else {
+        // 1. Buat dokumen dengan submit: true & approver_id
+        const res = await api.createDocument(payload);
+        finalDocId = res?.document?.id || res?.id;
+        // 2. Jika dokumen masih draft di response (antisipasi controller store), submit secara eksplisit
+        if (finalDocId && (res?.document?.status === 'draft' || res?.status === 'draft')) {
+          await api.submitDocument(finalDocId, {
+            approver_id: Number(verifikator1),
+            note: signNotes,
+          });
+        }
+      }
+
+      setIsSignModalOpen(false);
+      showToast('Formulir Penghapusan Aset TI berhasil disahkan dan diajukan ke Verifikator I!');
+
+      setTimeout(() => {
+        if (finalDocId) {
+          navigate(`/penghapusan/${finalDocId}`);
+        } else {
+          navigate('/penghapusan');
+        }
+      }, 1000);
+    } catch (err) {
+      console.error('Submit error:', err);
+      let errMsg = err.message || 'Gagal mengesahkan dan mengajukan dokumen';
+      if (err.errors) errMsg += ': ' + Object.values(err.errors).flat().join(', ');
+      setSignError(errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="w-full max-w-5xl mx-auto py-16 text-center">
+        <Loader2 className="w-8 h-8 text-[#0b2046] animate-spin mx-auto mb-3" />
+        <p className="text-sm font-semibold text-slate-700">Memuat Formulir Penghapusan...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-[1240px] mx-auto pb-16 space-y-6">
-      {/* Toast Notification */}
-      {feedbackMsg && (
-        <div className="fixed top-5 right-5 z-50 bg-[#0b2046] text-white px-4 py-3 rounded-lg shadow-xl text-xs font-medium flex items-center gap-2 border border-blue-400/30 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{feedbackMsg}</span>
+    <div className="w-full max-w-5xl mx-auto space-y-6 pb-20">
+      {/* Toast */}
+      {toastMessage && (
+        <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2.5 shadow-xl animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Header */}
-      <div>
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate('/penghapusan')}
-            className="p-2 bg-white hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors shadow-2xs"
-            title="Kembali ke Daftar Penghapusan"
+            className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors shadow-2xs"
+            title="Kembali ke Daftar"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-[#0b2046] tracking-tight">Formulir Penghapusan Aset TI</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Formulir resmi de-registrasi aktiva tetap dari registrasi TI SAP (DSP-03)</p>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded border border-blue-200">
+                DSP-03 &bull; FR.SM/TI/015.007/10-2020
+              </span>
+              <span className="text-xs text-slate-400">Versi: 02-2020</span>
+            </div>
+            <h1 className="text-2xl font-bold text-[#0b2046] mt-1">
+              {isEditMode ? 'Edit Formulir Penghapusan Aset TI' : 'Formulir Penghapusan Aset Teknologi Informasi'}
+            </h1>
           </div>
         </div>
-        <p className="text-sm text-slate-500 mt-2 max-w-4xl leading-relaxed">
-          Formulir pencatatan akhir penghapusan aset TI dari buku inventaris aset tetap perusahaan yang membutuhkan validasi kondisi fisik/logis serta kehadiran saksi-saksi resmi unit pengawas internal dan keuangan.
-        </p>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={handleOpenImportDsp02}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold border border-blue-200 transition-colors"
+          >
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span>Impor dari DSP-02</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePreviewPdf}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-[#0b2046] hover:bg-[#142e5d] text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+          >
+            <Eye className="w-4 h-4 text-emerald-400" />
+            <span>Pratinjau PDF</span>
+          </button>
+        </div>
       </div>
 
-      {/* SECTION 1: Informasi Pelaksana Eksekusi */}
-      <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded bg-[#0b2046] text-white flex items-center justify-center font-bold text-xs">
-              1
+      {errorMessage && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* SECTION 1: HEADER & IDENTITAS DOKUMEN */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+            1
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-[#0b2046]">Identitas Dokumen &amp; Lokasi</h3>
+            <p className="text-xs text-slate-500">Nomor referensi, tanggal pelaksanaan, dan business area</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              No. Referensi (DSP-02 / Dasar) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.nomor_referensi}
+              onChange={(e) => setFormData({ ...formData, nomor_referensi: e.target.value })}
+              placeholder="Contoh: BA-PMS/TI/DAOP1/10-2026/0014"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Sesuai kotak header No. Ref pada formulir fisik</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Tanggal Pelaksanaan <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="date"
+              value={formData.tanggal}
+              onChange={(e) => setFormData({ ...formData, tanggal: e.target.value })}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Tanggal penetapan formulir penghapusan</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Lokasi / Business Area <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.lokasi}
+              onChange={(e) => setFormData({ ...formData, lokasi: e.target.value })}
+              placeholder="Contoh: DAOP 1 Jakarta / Juanda"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Area kerja atau unit logistik penyimpanan</p>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 2: PERSONIL PELAKSANA */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+              2
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#0b2046]">Informasi Pelaksana Eksekusi</h2>
-              <p className="text-xs text-slate-400">Data personil TI yang bertanggung jawab atas penatausahaan dan pemutakhiran data</p>
+              <h3 className="text-sm font-bold text-[#0b2046]">Personil Pelaksana Penghapusan Aset</h3>
+              <p className="text-xs text-slate-500">Penanggung jawab teknis eksekusi penghapusan aktiva</p>
             </div>
           </div>
           <button
             type="button"
             onClick={handleSyncSSO}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0b2046] hover:bg-[#15326c] text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Sinkronkan SSO KAI
+            <span>Sinkronkan Akun Saya</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Hari & Tanggal Pelaksanaan */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Hari & Tanggal Pelaksanaan <span className="text-[#f05a22]">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={tanggal}
-                onChange={(e) => setTanggal(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-lg text-sm text-[#0b2046] font-medium focus:bg-white focus:outline-none focus:border-[#f05a22] transition-colors"
-              />
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Terverifikasi otomatis sesuai timestamp server</p>
-          </div>
-
-          {/* Nama Pelaksana Teknis */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Nama Pelaksana Teknis <span className="text-[#f05a22]">*</span>
-            </label>
-            <div className="relative flex items-center">
-              <input
-                type="text"
-                value={namaPelaksana}
-                onChange={(e) => setNamaPelaksana(e.target.value)}
-                className="w-full pl-3.5 pr-24 py-2.5 bg-slate-50/70 border border-slate-200 rounded-lg text-sm text-[#0b2046] font-bold focus:bg-white focus:outline-none focus:border-[#f05a22] transition-colors"
-              />
-              <span className="absolute right-2 px-2 py-0.5 bg-[#0b2046] text-white text-[10px] font-mono font-semibold rounded">
-                NIPP : {nippPelaksana}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Unit Pelaksana Teknis TI DAOP 1</p>
-          </div>
-
-          {/* Jabatan Fungsional */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Jabatan Fungsional <span className="text-[#f05a22]">*</span>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Nama Personil Pelaksana <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
-              value={jabatanPelaksana}
-              onChange={(e) => setJabatanPelaksana(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-white focus:outline-none focus:border-[#f05a22] transition-colors"
+              value={formData.nama_pelaksana}
+              onChange={(e) => setFormData({ ...formData, nama_pelaksana: e.target.value })}
+              placeholder="Nama lengkap pelaksana"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
-            <p className="text-[11px] text-slate-400 mt-1">Sesuai Surat Tugas No. ST/TI-DAOP1/2025/10</p>
           </div>
 
-          {/* Lokasi Titik Eksekusi Fisik */}
-          <div className="md:col-span-3">
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Lokasi Titik Eksekusi Fisik & Penyimpanan Terakhir <span className="text-[#f05a22]">*</span>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              NIPP Pelaksana <span className="text-rose-500">*</span>
             </label>
-            <div className="relative flex items-center">
-              <MapPin className="w-4 h-4 text-[#f05a22] absolute left-3.5" />
-              <input
-                type="text"
-                value={lokasiEksekusi}
-                onChange={(e) => setLokasiEksekusi(e.target.value)}
-                className="w-full pl-10 pr-32 py-2.5 bg-slate-50/70 border border-slate-200 rounded-lg text-sm text-slate-700 focus:bg-white focus:outline-none focus:border-[#f05a22] transition-colors"
-              />
-              <span className="absolute right-3 px-2.5 py-1 bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-medium rounded">
-                Zona Keamanan A1
-              </span>
-            </div>
+            <input
+              type="text"
+              value={formData.nipp_pelaksana}
+              onChange={(e) => setFormData({ ...formData, nipp_pelaksana: e.target.value })}
+              placeholder="Nomor Induk Personil"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Jabatan / Fungsi <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.jabatan_pelaksana}
+              onChange={(e) => setFormData({ ...formData, jabatan_pelaksana: e.target.value })}
+              placeholder="Fungsi pelaksana penghapusan"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* SECTION 2: Klasifikasi & Kondisi Penghapusan Aset */}
-      <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 rounded bg-[#0b2046] text-white flex items-center justify-center font-bold text-xs">
-            2
+      {/* SECTION 3: PERNYATAAN STATUS ASET */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+            3
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#0b2046]">Klasifikasi & Kondisi Penghapusan Aset</h2>
-            <p className="text-xs text-slate-400">Pilih dasar faktual penghapusan fisik dan akuntansi aktiva tetap</p>
+            <h3 className="text-sm font-bold text-[#0b2046]">Pernyataan Status Aset Teknologi Informasi</h3>
+            <p className="text-xs text-slate-500">Pilih salah satu kondisi aset yang dinyatakan pada formulir</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
-          {/* Card 1: Dimusnahkan */}
-          <div
-            onClick={() => setKondisi('Dimusnahkan')}
-            className={`rounded-xl p-5 border-2 transition-all cursor-pointer relative ${
-              kondisi === 'Dimusnahkan'
-                ? 'border-[#f05a22] bg-orange-50/15 shadow-sm'
-                : 'border-slate-200 hover:border-slate-300 bg-white'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#f05a22] text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Flame className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-[#0b2046]">Dimusnahkan</h3>
-                  <span className="text-[10px] font-black text-[#f05a22] tracking-wider uppercase">
-                    METODE: PENGHANCURAN FISIK & SANITASI
-                  </span>
-                </div>
-              </div>
+        <div className="pt-1">
+          <p className="text-xs font-semibold text-slate-700 mb-3">
+            Menyatakan bahwa Aset Teknologi Informasi dinyatakan :
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label
+              className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                formData.status_kondisi === 'Dimusnahkan'
+                  ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20'
+                  : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="status_kondisi"
+                value="Dimusnahkan"
+                checked={formData.status_kondisi === 'Dimusnahkan'}
+                onChange={() => setFormData({ ...formData, status_kondisi: 'Dimusnahkan' })}
+                className="mt-0.5 text-blue-600 focus:ring-blue-500"
+              />
               <div>
-                {kondisi === 'Dimusnahkan' ? (
-                  <div className="w-5 h-5 rounded-full bg-[#f05a22] text-white flex items-center justify-center">
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  </div>
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-300"></div>
-                )}
+                <span className="text-xs font-bold text-slate-900 block">Dimusnahkan</span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
+                  Aset telah dihancurkan secara fisik/logis melalui tahapan Berita Acara Pemusnahan (DSP-02)
+                </span>
               </div>
-            </div>
+            </label>
 
-            <p className="text-xs text-slate-600 mt-3 leading-relaxed">
-              Perangkat keras atau media penyimpanan telah dihancurkan (shredding/degaussing) secara permanen sesuai dengan Berita Acara Pemusnahan (DSP-02) dan tidak dapat direparasi maupun difungsikan kembali.
-            </p>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-              <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded font-mono font-medium">
-                SAP Status: <strong className="text-slate-800">DECOMM_SCRAP</strong>
-              </span>
-              <span className="text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                BA Terlampir Valid
-              </span>
-            </div>
-          </div>
-
-          {/* Card 2: Tidak Layak / Rusak Berat */}
-          <div
-            onClick={() => setKondisi('Tidak Layak-Rusak')}
-            className={`rounded-xl p-5 border-2 transition-all cursor-pointer relative ${
-              kondisi === 'Tidak Layak-Rusak'
-                ? 'border-[#0b2046] bg-slate-50/70 shadow-sm'
-                : 'border-slate-200 hover:border-slate-300 bg-white'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 flex items-center justify-center shrink-0">
-                  <Monitor className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-[#0b2046]">Tidak Layak / Rusak Berat</h3>
-                  <span className="text-[10px] font-black text-slate-500 tracking-wider uppercase">
-                    METODE: DE-REGISTRASI NON-DESTRUKTIF
-                  </span>
-                </div>
-              </div>
+            <label
+              className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                formData.status_kondisi === 'Tidak Layak-Rusak'
+                  ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20'
+                  : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="status_kondisi"
+                value="Tidak Layak-Rusak"
+                checked={formData.status_kondisi === 'Tidak Layak-Rusak'}
+                onChange={() => setFormData({ ...formData, status_kondisi: 'Tidak Layak-Rusak' })}
+                className="mt-0.5 text-amber-600 focus:ring-amber-500"
+              />
               <div>
-                {kondisi === 'Tidak Layak-Rusak' ? (
-                  <div className="w-5 h-5 rounded-full bg-[#0b2046] text-white flex items-center justify-center">
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  </div>
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-300"></div>
-                )}
+                <span className="text-xs font-bold text-slate-900 block">Tidak Layak / Rusak</span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
+                  Aset mengalami kerusakan berat permanen, usang, atau tidak ekonomis untuk diperbaiki
+                </span>
               </div>
-            </div>
-
-            <p className="text-xs text-slate-600 mt-3 leading-relaxed">
-              Perangkat mengalami kerusakan fatal (Total Loss &gt; 80%), usang (obsolete teknologi &gt; 7 tahun), atau secara kalkulasi biaya teknis tidak layak untuk diperbaiki kembali menurut hasil uji lab TI KAI.
-            </p>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-              <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded font-mono font-medium">
-                SAP Status: <strong className="text-slate-800">OBSOLETE_WRITE_OFF</strong>
-              </span>
-              <span className="text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded">
-                Rekomendasi Teknis
-              </span>
-            </div>
+            </label>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* SECTION 3: Rincian Barang yang Dihapuskan */}
-      <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="p-6 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded bg-[#0b2046] text-white flex items-center justify-center font-bold text-xs">
-              3
+      {/* SECTION 4: TABEL RINCIAN ASET */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+              4
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#0b2046]">Rincian Barang yang Dihapuskan</h2>
-              <p className="text-xs text-slate-400">Daftar item perangkat TI resmi yang dicatat keluar dari Aktiva Tetap DAOP 1</p>
+              <h3 className="text-sm font-bold text-[#0b2046]">Rincian Aset yang Dihapus</h3>
+              <p className="text-xs text-slate-500">Sesuai kolom tabel template resmi FR.SM/TI/015.007/10-2020</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-[#0b2046] text-white text-xs font-semibold rounded-md">
-              {items.length} Aset Terdaftar
-            </span>
-            <span className="px-3 py-1 bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-md">
-              Total Nilai Buku: Rp 0,-
-            </span>
-          </div>
+          <button
+            type="button"
+            onClick={handleAddItem}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-xs font-bold transition-colors shadow-2xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Tambah Baris Aset</span>
+          </button>
         </div>
 
-        {/* Tabel Barang */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left text-xs">
-            <thead className="bg-[#f8fafc] text-slate-500 uppercase font-bold border-b border-slate-200 text-[11px]">
+            <thead className="bg-[#0b2046] text-white font-semibold">
               <tr>
-                <th className="py-3.5 px-4 text-center w-12">NO</th>
-                <th className="py-3.5 px-5">NAMA BARANG & SPESIFIKASI</th>
-                <th className="py-3.5 px-4 text-center w-24">JUMLAH</th>
-                <th className="py-3.5 px-4">SERIAL NUMBER</th>
-                <th className="py-3.5 px-4">NO. INVENTARIS SAP</th>
-                <th className="py-3.5 px-4">LOKASI TERAKHIR</th>
-                <th className="py-3.5 px-4 text-center">STATUS AKHIR SAP</th>
-                <th className="py-3.5 px-4 text-center w-14">AKSI</th>
+                <th className="py-2.5 px-3 text-center w-12">No</th>
+                <th className="py-2.5 px-3 min-w-[200px]">Nama Barang *</th>
+                <th className="py-2.5 px-3 text-center w-20">Jumlah *</th>
+                <th className="py-2.5 px-3 min-w-[140px]">Serial Nomor</th>
+                <th className="py-2.5 px-3 min-w-[140px]">No. Inventaris</th>
+                <th className="py-2.5 px-3 min-w-[150px]">Lokasi Aset</th>
+                <th className="py-2.5 px-3 min-w-[160px]">Keterangan</th>
+                <th className="py-2.5 px-3 text-center w-12">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {items.map((item, idx) => (
-                <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-4 px-4 text-center font-medium text-slate-500">
-                    {String(idx + 1).padStart(2, '0')}
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {items.map((it, idx) => (
+                <tr key={it.id || idx} className="hover:bg-slate-50/70">
+                  <td className="py-2.5 px-3 text-center font-semibold text-slate-600">
+                    {idx + 1}
                   </td>
-                  <td className="py-4 px-5">
-                    <p className="font-bold text-[#0b2046] text-sm leading-tight">{item.nama}</p>
-                    <p className="text-slate-400 text-[11px] mt-0.5">{item.spesifikasi}</p>
+                  <td className="py-2 px-3">
+                    <input
+                      type="text"
+                      value={it.nama_barang}
+                      onChange={(e) => handleItemChange(it.id, 'nama_barang', e.target.value)}
+                      placeholder="Nama aset yang dihapus..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
                   </td>
-                  <td className="py-4 px-4 text-center">
-                    <p className="font-bold text-[#0b2046] text-sm">{item.jumlah}</p>
-                    <span className="text-[10px] text-slate-400 uppercase font-medium">{item.satuan}</span>
+                  <td className="py-2 px-3">
+                    <input
+                      type="number"
+                      min="1"
+                      value={it.jumlah}
+                      onChange={(e) => handleItemChange(it.id, 'jumlah', e.target.value)}
+                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-center font-bold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
                   </td>
-                  <td className="py-4 px-4 font-mono text-[11px] text-slate-700">
-                    {item.serialNumber}
+                  <td className="py-2 px-3">
+                    <input
+                      type="text"
+                      value={it.serial_nomor}
+                      onChange={(e) => handleItemChange(it.id, 'serial_nomor', e.target.value)}
+                      placeholder="SN-..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
                   </td>
-                  <td className="py-4 px-4">
-                    <span className="font-bold font-mono text-[#f05a22] text-xs">
-                      {item.noInventarisSap}
-                    </span>
+                  <td className="py-2 px-3">
+                    <input
+                      type="text"
+                      value={it.no_inventaris}
+                      onChange={(e) => handleItemChange(it.id, 'no_inventaris', e.target.value)}
+                      placeholder="AST-..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
                   </td>
-                  <td className="py-4 px-4 text-slate-600 text-xs">
-                    {item.lokasiTerakhir}
+                  <td className="py-2 px-3">
+                    <input
+                      type="text"
+                      value={it.lokasi_aset}
+                      onChange={(e) => handleItemChange(it.id, 'lokasi_aset', e.target.value)}
+                      placeholder="Tempat keberadaan..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
                   </td>
-                  <td className="py-4 px-4 text-center">
-                    {item.statusSapType === 'terhapus' ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[11px] font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        {item.statusSap}
-                      </span>
-                    ) : item.statusSapType === 'hapus_buku' ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[11px] font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                        {item.statusSap}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[11px] font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                        {item.statusSap}
-                      </span>
-                    )}
+                  <td className="py-2 px-3">
+                    <input
+                      type="text"
+                      value={it.keterangan}
+                      onChange={(e) => handleItemChange(it.id, 'keterangan', e.target.value)}
+                      placeholder="Keterangan lebih lanjut..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className="py-2 px-3 text-center">
                     <button
                       type="button"
-                      onClick={() => handleRemoveItem(item.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      title="Hapus baris"
+                      onClick={() => handleRemoveItem(it.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Hapus Baris"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
                 </tr>
               ))}
-              {items.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
-                    Belum ada barang yang ditambahkan. Silakan klik "Tambah Baris Barang" atau "Impor Data [DSP-02]".
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
+      </div>
 
-        {/* Footer Buttons Tabel */}
-        <div className="p-4 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-[#0b2046] hover:bg-slate-50 transition-colors shadow-2xs"
-            >
-              <Plus className="w-3.5 h-3.5 text-[#f05a22]" />
-              Tambah Baris Barang
-            </button>
-            <button
-              type="button"
-              onClick={handleImportDSP02}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-[#0b2046] hover:bg-slate-50 transition-colors shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-600" />
-              Impor Data [DSP-02]
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => alert('Fitur ekspor spreadsheet telah disiapkan.')}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors shadow-2xs"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            Export Tabel (.xlsx)
-          </button>
-        </div>
-      </section>
-
-      {/* SECTION 4: Daftar Saksi Kehadiran & Pengesahan Berlapis (TTE BSrE) */}
-      <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 rounded bg-[#0b2046] text-white flex items-center justify-center font-bold text-xs">
-            4
+      {/* SECTION 5: SAKSI-SAKSI */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+            5
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#0b2046]">
-              Daftar Saksi Kehadiran & Pengesahan Berlapis (TTE BSrE)
-            </h2>
-            <p className="text-xs text-slate-400">
-              Sesuai Peraturan Direksi KAI tentang Tata Kelola Pemusnahan dan Penghapusan Aktiva TI
+            <h3 className="text-sm font-bold text-[#0b2046]">Saksi-Saksi Penghapusan Aset</h3>
+            <p className="text-xs text-slate-500">
+              Dilaksanakan dihadapan para saksi yang nama dan tanda tangannya tercantum dalam formulir
             </p>
           </div>
         </div>
 
-        {/* Sub-Seksi 4.A: Saksi Pelaksanaan Lapangan */}
-        <div className="space-y-3 pt-1">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                Sub-Seksi 4.A: Saksi Pelaksanaan Lapangan
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Daftar pegawai resmi lintas unit yang menyaksikan proses pembukuan dan fisik secara langsung
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => alert('Fitur tambah saksi tambahan aktif.')}
-              className="flex items-center gap-1 px-3 py-1 bg-[#0b2046] hover:bg-[#15326c] text-white rounded text-xs font-medium transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              Tambah Saksi
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {saksiList.map((saksi) => (
-              <div key={saksi.id} className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-[#f05a22] tracking-wider uppercase">
-                    {saksi.kategori}
-                  </span>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
-                    Hadir ✓
-                  </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Saksi 1 */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-blue-100 text-blue-800 flex items-center justify-center text-[10px] font-bold">1</span>
+              <span>Saksi I (Audit / Pengawas Internal)</span>
+            </h4>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Nama Saksi I</label>
+                <input
+                  type="text"
+                  value={saksi1.nama}
+                  onChange={(e) => setSaksi1({ ...saksi1, nama: e.target.value })}
+                  placeholder="Nama saksi 1"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">NIPP Saksi I</label>
+                  <input
+                    type="text"
+                    value={saksi1.nipp}
+                    onChange={(e) => setSaksi1({ ...saksi1, nipp: e.target.value })}
+                    placeholder="NIPP..."
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                  />
                 </div>
                 <div>
-                  <h4 className="font-bold text-[#0b2046] text-sm">{saksi.nama}</h4>
-                  <p className="text-slate-400 text-xs mt-0.5">NIPP: {saksi.nipp}</p>
-                  <p className="text-slate-600 text-[11px] mt-1">{saksi.jabatan}</p>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Jabatan / Fungsi</label>
+                  <input
+                    type="text"
+                    value={saksi1.jabatan}
+                    onChange={(e) => setSaksi1({ ...saksi1, jabatan: e.target.value })}
+                    placeholder="Jabatan..."
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                  />
                 </div>
-                <div className="pt-2 border-t border-slate-200/80 flex justify-between items-center text-[11px]">
-                  <span className="text-slate-400">Absensi: {saksi.absensi}</span>
-                  <span className="font-bold text-slate-700">{saksi.tteStatus}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Sub-Seksi 4.B: Blok Pengesahan Digital Resmi */}
-        <div className="space-y-3 pt-2">
-          <div className="flex justify-between items-center border-t border-slate-100 pt-4">
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-              Sub-Seksi 4.B: Blok Pengesahan Digital Resmi (BSrE & Badan Siber Sandi Negara)
-            </h3>
-            <span className="text-xs text-slate-400 font-medium">Level Otorisasi: 3 Tingkat</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* 1. Pelaksana */}
-            <div className="bg-slate-50/60 border border-slate-200 rounded-xl p-5 flex flex-col items-center text-center">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">
-                1. DILAKUKAN OLEH (PELAKSANA)
-              </span>
-              
-              {/* QR Code Container BSrE */}
-              <div className="w-24 h-24 bg-white border border-slate-300 rounded-lg p-2 shadow-xs flex items-center justify-center relative">
-                <div className="w-full h-full bg-slate-900 rounded p-1 flex flex-col justify-between items-center text-[8px] text-white">
-                  <div className="w-full flex justify-between">
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                  </div>
-                  <div className="text-[9px] font-black text-blue-300 tracking-tighter">BSrE</div>
-                  <div className="w-full flex justify-between">
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
-                  </div>
-                </div>
-              </div>
-
-              <h4 className="font-bold text-[#0b2046] text-sm mt-4">{namaPelaksana}</h4>
-              <p className="text-slate-400 text-xs mt-0.5">NIPP : {nippPelaksana}</p>
-              <p className="text-slate-600 text-xs mt-1">Pranata Komputer Madya</p>
-              
-              <div className="mt-4 pt-2 w-full border-t border-slate-200/80">
-                <span className="text-emerald-600 text-xs font-semibold flex items-center justify-center gap-1">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  Ditandatangani Digital (30 Okt 2025)
-                </span>
               </div>
             </div>
+          </div>
 
-            {/* 2. Atasan Langsung */}
-            <div className="bg-slate-50/60 border border-slate-200 rounded-xl p-5 flex flex-col items-center text-center">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">
-                2. DISETUJUI OLEH (ATASAN LANGSUNG)
-              </span>
-
-              {/* QR Code Container BSrE */}
-              <div className="w-24 h-24 bg-white border border-slate-300 rounded-lg p-2 shadow-xs flex items-center justify-center relative">
-                <div className="w-full h-full bg-slate-900 rounded p-1 flex flex-col justify-between items-center text-[8px] text-white">
-                  <div className="w-full flex justify-between">
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                  </div>
-                  <div className="text-[9px] font-black text-blue-300 tracking-tighter">BSrE</div>
-                  <div className="w-full flex justify-between">
-                    <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
-                  </div>
-                </div>
+          {/* Saksi 2 */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-blue-100 text-blue-800 flex items-center justify-center text-[10px] font-bold">2</span>
+              <span>Saksi II (Keuangan &amp; Aset)</span>
+            </h4>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Nama Saksi II</label>
+                <input
+                  type="text"
+                  value={saksi2.nama}
+                  onChange={(e) => setSaksi2({ ...saksi2, nama: e.target.value })}
+                  placeholder="Nama saksi 2"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
               </div>
-
-              <h4 className="font-bold text-[#0b2046] text-sm mt-4">Hermawan Susilo, M.T</h4>
-              <p className="text-slate-400 text-xs mt-0.5">NIPP : 57430</p>
-              <p className="text-slate-600 text-xs mt-1">Senior Manager Fasilitas TI DAOP 1</p>
-
-              <div className="mt-4 pt-2 w-full border-t border-slate-200/80">
-                <span className="text-emerald-600 text-xs font-semibold flex items-center justify-center gap-1">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  Ditandatangani Digital (30 Okt 2025)
-                </span>
-              </div>
-            </div>
-
-            {/* 3. Mengetahui Pimpinan Unit TI (VP) */}
-            <div className="border-2 border-orange-200 bg-orange-50/15 rounded-xl overflow-hidden flex flex-col shadow-xs">
-              <div className="bg-[#f05a22] text-white py-2 px-4 text-center">
-                <span className="text-[11px] font-black uppercase tracking-wider">
-                  3. MENGETAHUI (PIMPINAN UNIT TI)
-                </span>
-              </div>
-
-              <div className="p-5 flex-1 flex flex-col items-center text-center justify-between">
-                {!vpSigned ? (
-                  <div className="w-full bg-white border border-orange-200 rounded-lg p-3 my-2 flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 text-[#f05a22] flex items-center justify-center mb-1">
-                      <Lock className="w-4 h-4" />
-                    </div>
-                    <span className="text-xs font-bold text-[#0b2046]">Menunggu Validasi VP</span>
-                    <span className="text-[10px] text-slate-400">Token OTP Terkirim ke HP</span>
-                  </div>
-                ) : (
-                  <div className="w-24 h-24 bg-white border border-slate-300 rounded-lg p-2 shadow-xs flex items-center justify-center relative my-1">
-                    <div className="w-full h-full bg-slate-900 rounded p-1 flex flex-col justify-between items-center text-[8px] text-white">
-                      <div className="w-full flex justify-between">
-                        <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                        <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                      </div>
-                      <div className="text-[9px] font-black text-blue-300 tracking-tighter">BSrE</div>
-                      <div className="w-full flex justify-between">
-                        <span className="w-2.5 h-2.5 bg-white rounded-xs"></span>
-                        <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <h4 className="font-bold text-[#0b2046] text-sm mt-2">Budi Santoso, M.Kom</h4>
-                  <p className="text-slate-400 text-xs mt-0.5">NIPP : 58492</p>
-                  <p className="text-slate-600 text-xs mt-1">Vice President IT Operation KAI</p>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">NIPP Saksi II</label>
+                  <input
+                    type="text"
+                    value={saksi2.nipp}
+                    onChange={(e) => setSaksi2({ ...saksi2, nipp: e.target.value })}
+                    placeholder="NIPP..."
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                  />
                 </div>
-
-                <div className="w-full pt-3 mt-3 border-t border-orange-100">
-                  {!vpSigned ? (
-                    <button
-                      type="button"
-                      onClick={handleSignVP}
-                      className="w-full py-2 px-3 bg-[#a03810] hover:bg-[#852c0a] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-                    >
-                      <Lock className="w-3.5 h-3.5" />
-                      Bubuhkan TTE BSrE (KAI Pass)
-                    </button>
-                  ) : (
-                    <span className="text-emerald-600 text-xs font-semibold flex items-center justify-center gap-1">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      Ditandatangani Digital (30 Okt 2025)
-                    </span>
-                  )}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Jabatan / Fungsi</label>
+                  <input
+                    type="text"
+                    value={saksi2.jabatan}
+                    onChange={(e) => setSaksi2({ ...saksi2, jabatan: e.target.value })}
+                    placeholder="Jabatan..."
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                  />
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* BOTTOM: Legal Compliance Banner & Actions */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col lg:flex-row items-center justify-between gap-5">
-        {/* Legal Text */}
-        <div className="flex items-start gap-3.5 max-w-2xl">
-          <div className="w-9 h-9 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center text-[#f05a22] shrink-0 mt-0.5">
-            <Scale className="w-5 h-5" />
+      {/* SECTION 6: ALUR VERIFIKASI / PEJABAT PENANDATANGAN */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+            6
           </div>
           <div>
-            <h4 className="text-xs font-bold text-[#0b2046]">Kepatuhan Hukum & Pertanggungjawaban Aktiva Tetap</h4>
-            <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-              Dokumen Formulir Penghapusan Aset TI [DSP-03] merupakan dasar sah penghapusan nomor inventaris aktiva tetap PT Kereta Api Indonesia (Persero) pada modul SAP S/4HANA Finance &amp; Asset Accounting (FI-AA). Penghapusan berstatus permanen dan mengikat secara hukum perseroan.
+            <h3 className="text-sm font-bold text-[#0b2046]">Alur Pengesahan Pejabat (Approval Chain)</h3>
+            <p className="text-xs text-slate-500">
+              Sesuai kolom tanda tangan formulir: Dilakukan (Pelaksana), Disetujui (Verifikator 1), Mengetahui (Verifikator 2)
             </p>
           </div>
         </div>
 
-        {/* Buttons Group */}
-        <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full lg:w-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Verifikator 1 - Disetujui */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800">1. Disetujui (Verifikator I) <span className="text-rose-500">*</span></span>
+              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded border border-emerald-200">
+                Tahap 1
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Pejabat yang berwenang memberikan persetujuan penghapusan aktiva
+            </p>
+            <select
+              value={verifikator1}
+              onChange={(e) => setVerifikator1(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">-- Pilih Pejabat Penyetuju --</option>
+              {apiUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nama || u.name} - {u.nip || '-'} ({typeof u.jabatan === 'object' ? u.jabatan?.nama : (u.jabatan || u.role || 'Pejabat')})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Verifikator 2 - Mengetahui */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800">2. Mengetahui (Verifikator II)</span>
+              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-200">
+                Tahap 2
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Pimpinan unit kerja / Head of Asset &amp; IT yang mengetahui penghapusan
+            </p>
+            <select
+              value={verifikator2}
+              onChange={(e) => setVerifikator2(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">-- Pilih Pejabat Mengetahui --</option>
+              {apiUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nama || u.name} - {u.nip || '-'} ({typeof u.jabatan === 'object' ? u.jabatan?.nama : (u.jabatan || u.role || 'Pejabat')})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* BOTTOM ACTION BAR */}
+      <div className="sticky bottom-4 z-40 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200 shadow-xl flex flex-col sm:flex-row justify-between items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/penghapusan')}
+          className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+        >
+          Batal
+        </button>
+
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <button
             type="button"
-            onClick={() => navigate('/pemusnahan')}
-            className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+            onClick={handlePreviewPdf}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors border border-slate-200"
           >
-            Batal / Kembali
+            <Eye className="w-4 h-4 text-blue-600" />
+            <span>Pratinjau PDF</span>
           </button>
+
           <button
             type="button"
-            onClick={() => alert('Pratinjau A4 dokumen DSP-03 siap dicetak.')}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-500" />
-            Pratinjau A4 (PDF)
-          </button>
-          <button
-            type="button"
+            onClick={handleSaveDraft}
             disabled={isSubmitting}
-            onClick={() => handleSubmitForm(true)}
-            className="w-full sm:w-auto px-4 py-2.5 bg-[#0b2046] hover:bg-[#15326c] text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors shadow-2xs"
           >
-            Simpan Draf Akhir
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+            ) : (
+              <Save className="w-4 h-4 text-slate-500" />
+            )}
+            <span>Simpan Draf</span>
           </button>
+
           <button
             type="button"
+            onClick={handleOpenSubmitModal}
             disabled={isSubmitting}
-            onClick={() => handleSubmitForm(false)}
-            className="w-full sm:w-auto px-5 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-xs font-bold transition-colors shadow-sm whitespace-nowrap"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold transition-colors shadow-sm shadow-[#f05a22]/30"
           >
-            Finalisasi & Catat Penghapusan [DSP-03]
+            <PenTool className="w-4 h-4" />
+            <span>Tanda Tangani &amp; Ajukan</span>
           </button>
         </div>
       </div>
 
-      {/* FOOTER METADATA */}
-      <div className="text-center text-[11px] text-slate-400 space-y-1 pt-2">
-        <p>Sistem Informasi Aset TI KAI (SIA-TI) • Modul Penghapusan Aktiva v2.4 &nbsp;|&nbsp; HASH: 8F2A-89BD-47EE-KAI-DAOP1</p>
-        <p>© 2025 PT Kereta Api Indonesia (Persero). Seluruh hak cipta dilindungi undang-undang.</p>
-      </div>
-
-      {/* MODAL TAMBAH BARIS BARANG */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-[#0b2046]">Tambah Rincian Aset yang Dihapuskan</h3>
+      {/* MODAL PENGESAHAN TTE PEMBUAT / PELAKSANA */}
+      {isSignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 max-h-[90vh]">
+            <div className="px-6 py-4 bg-[#0b2046] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Pengesahan TTE Pelaksana Penghapusan Aset</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Kolom &quot;Dilakukan&quot; &bull; {formData.nama_pelaksana} (NIPP: {formData.nipp_pelaksana})
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                onClick={() => setIsSignModalOpen(false)}
+                className="p-1.5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <form onSubmit={handleExecuteSignAndSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
+              {signError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{signError}</span>
+                </div>
+              )}
+
+              {/* Signature Selector */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Barang *</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Cisco Switch Catalyst 2960"
-                  value={newItem.nama}
-                  onChange={(e) => setNewItem({ ...newItem, nama: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Tanda Tangan Pelaksana (Dilakukan) <span className="text-rose-500">*</span>
+                </label>
+                <SignatureSelector
+                  mode={signatureMode}
+                  setMode={setSignatureMode}
+                  signatureMode={signatureMode}
+                  setSignatureMode={setSignatureMode}
+                  canvasRef={canvasRef}
+                  hasDrawn={hasDrawnSignature}
+                  setHasDrawn={setHasDrawnSignature}
+                  hasDrawnSignature={hasDrawnSignature}
+                  setHasDrawnSignature={setHasDrawnSignature}
+                  selectedFile={selectedSignatureFile}
+                  setSelectedFile={setSelectedSignatureFile}
+                  selectedSignatureFile={selectedSignatureFile}
+                  setSelectedSignatureFile={setSelectedSignatureFile}
+                  hasServerSignature={hasServerSignature}
+                  serverSignatureUrl={serverSignatureUrl}
+                  user={user}
                 />
               </div>
 
+              {/* PIN KAI Pass */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Spesifikasi Teknis</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: 24-Port 10/100/1000 Gigabit Ethernet"
-                  value={newItem.spesifikasi}
-                  onChange={(e) => setNewItem({ ...newItem, spesifikasi: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  PIN Otorisasi KAI Pass <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    maxLength={8}
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    placeholder="Masukkan 6 digit PIN KAI Pass"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 tracking-widest font-mono"
+                    required
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Default PIN simulasi: 123456</p>
+              </div>
+
+              {/* Catatan Pengajuan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Pengajuan
+                </label>
+                <textarea
+                  rows={2}
+                  value={signNotes}
+                  onChange={(e) => setSignNotes(e.target.value)}
+                  placeholder="Catatan pengajuan penghapusan aset..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Jumlah</label>
-                  <input
-                    type="number"
-                    value={newItem.jumlah}
-                    onChange={(e) => setNewItem({ ...newItem, jumlah: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Satuan</label>
-                  <input
-                    type="text"
-                    value={newItem.satuan}
-                    onChange={(e) => setNewItem({ ...newItem, satuan: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Serial Number</label>
-                  <input
-                    type="text"
-                    placeholder="SN-XXXXX"
-                    value={newItem.serialNumber}
-                    onChange={(e) => setNewItem({ ...newItem, serialNumber: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">No. Inventaris SAP</label>
-                  <input
-                    type="text"
-                    placeholder="AST-TI-202X-XXXX"
-                    value={newItem.noInventarisSap}
-                    onChange={(e) => setNewItem({ ...newItem, noInventarisSap: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono text-[#f05a22]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Lokasi Terakhir</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Server Room DAOP 1"
-                  value={newItem.lokasiTerakhir}
-                  onChange={(e) => setNewItem({ ...newItem, lokasiTerakhir: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Status Akhir SAP</label>
-                <select
-                  value={newItem.statusSap}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    let type = 'scrap';
-                    if (val.includes('Hapus Buku')) type = 'hapus_buku';
-                    if (val.includes('Terhapus')) type = 'terhapus';
-                    setNewItem({ ...newItem, statusSap: val, statusSapType: type });
-                  }}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              {/* Submit Buttons */}
+              <div className="pt-2 flex items-center gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsSignModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
                 >
-                  <option value="Scrap (Nilai Buku Rp 0)">Scrap (Nilai Buku Rp 0)</option>
-                  <option value="Hapus Buku Aktiva">Hapus Buku Aktiva</option>
-                  <option value="Terhapus SAP FI-AA">Terhapus SAP FI-AA</option>
-                </select>
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm shadow-[#f05a22]/30"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Mengesahkan &amp; Mengajukan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Sahkan &amp; Ajukan Sekarang</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL IMPORT DSP-02 */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 max-h-[85vh]">
+            <div className="px-6 py-4 bg-[#0b2046] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  <span>Impor dari Berita Acara Pemusnahan (DSP-02)</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">Pilih dokumen berita acara pemusnahan yang mendasari penghapusan ini</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-1.5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+              {isLoadingDsp02 ? (
+                <div className="py-12 text-center">
+                  <Loader2 className="w-8 h-8 text-[#0b2046] animate-spin mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600">Memuat berkas DSP-02...</p>
+                </div>
+              ) : dsp02List.length === 0 ? (
+                <div className="py-12 text-center bg-white rounded-xl border border-slate-200 p-6">
+                  <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-700">Belum ada dokumen DSP-02 ditemukan di sistem</p>
+                </div>
+              ) : (
+                dsp02List.map((doc) => (
+                  <div
+                    key={doc.id}
+                    onClick={() => handleSelectDsp02(doc)}
+                    className="p-4 bg-white hover:bg-blue-50/50 rounded-xl border border-slate-200 hover:border-blue-400 cursor-pointer transition-all shadow-2xs group"
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded border border-blue-200">
+                            DSP-02
+                          </span>
+                          <span className="font-bold text-xs text-[#0b2046] group-hover:text-blue-700">
+                            {doc.number || `BA-PMS/TI/000${doc.id}/2026`}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1 font-medium">
+                          {doc.items?.[0]?.nama_aset || doc.data?.items?.[0]?.nama_aset || 'Pemusnahan Perangkat TI'}
+                          {(doc.items?.length > 1 || doc.data?.items?.length > 1) && ' (+ aset lainnya)'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Lokasi: {doc.data?.lokasi || doc.data?.business_area || 'Kantor Pusat Bandung'}
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 bg-blue-600 text-white text-[11px] font-bold rounded-lg group-hover:bg-blue-700 transition-colors">
+                        Pilih &amp; Salin
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIVE PDF PREVIEW */}
+      {isPreviewPdfModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-5xl h-[88vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 bg-[#0b2046] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-400" />
+                  <span>Pratinjau Formulir Penghapusan Aset TI (DSP-03)</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5 font-mono">FR.SM/TI/015.007/10-2020 &bull; Versi: 02-2020</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewPdfBlobUrl && (
+                  <a
+                    href={previewPdfBlobUrl}
+                    download="Formulir_Penghapusan_Aset_TI_DSP03.pdf"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    <span>Unduh PDF</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClosePreviewPdf}
+                  className="p-1.5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleAddItem}
-                className="px-4 py-2 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-xs font-bold"
-              >
-                Simpan Baris
-              </button>
+            <div className="flex-1 bg-slate-100 relative">
+              {isLoadingPreviewPdf && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-10">
+                  <Loader2 className="w-8 h-8 text-[#0b2046] animate-spin mb-3" />
+                  <p className="text-sm font-bold text-slate-800">Menghasilkan Dokumen PDF dari Backend...</p>
+                  <p className="text-xs text-slate-500 mt-1">Template PDF resmi FR.SM/TI/015.007/10-2020</p>
+                </div>
+              )}
+
+              {previewPdfError ? (
+                <div className="p-8 text-center max-w-md mx-auto my-12 bg-white rounded-xl border border-rose-200 shadow-sm">
+                  <AlertTriangle className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+                  <h4 className="font-bold text-sm text-slate-800">Gagal Memuat PDF</h4>
+                  <p className="text-xs text-slate-500 mt-1">{previewPdfError}</p>
+                  <button
+                    type="button"
+                    onClick={handleClosePreviewPdf}
+                    className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              ) : previewPdfBlobUrl ? (
+                <iframe
+                  src={previewPdfBlobUrl}
+                  title="PDF Preview DSP-03"
+                  className="w-full h-full border-none"
+                />
+              ) : null}
             </div>
           </div>
         </div>
