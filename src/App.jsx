@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
 import DashboardPage from './pages/DashboardPage'
+import RegisterPage from './pages/RegisterPage'
 import PemusnahanListPage from './pages/PemusnahanListPage'
 import PemusnahanFormPage from './pages/PemusnahanFormPage'
 import PenghapusanFormPage from './pages/PenghapusanFormPage'
@@ -22,6 +23,7 @@ const formatJabatan = (jabatan) => {
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [publicPage, setPublicPage] = useState('login')
   const [userProfile, setUserProfile] = useState(null)
   const [documents, setDocuments] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -177,7 +179,21 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={handleLoginSuccess} onGuestBook={() => alert('Buku Tamu belum diimplementasi')} />
+    if (publicPage === 'register') {
+      return (
+        <RegisterPage
+          onBackToLogin={() => setPublicPage('login')}
+        />
+      )
+    }
+
+    return (
+      <Login
+        onLoginSuccess={handleLoginSuccess}
+        onGuestBook={() => setPublicPage('guestbook')}
+        onRegister={() => setPublicPage('register')}
+      />
+    )
   }
 
   return (

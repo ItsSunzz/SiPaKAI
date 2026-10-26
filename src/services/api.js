@@ -99,6 +99,21 @@ export const api = {
     return data
   },
 
+  // Register akun pemohon
+  async register({ nip, name, jabatan, unit_kerja, password, password_confirmation }) {
+    return request('/auth/register', {
+      method: 'POST',
+      body: {
+        nip,
+        name,
+        jabatan,
+        unit_kerja,
+        password,
+        password_confirmation,
+      },
+    })
+  },
+
   async getMe() {
     return request('/auth/me')
   },

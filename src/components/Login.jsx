@@ -3,7 +3,7 @@ import { HelpCircle, IdCard, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Train }
 import { api } from '../services/api';
 import heroImg from '../assets/hero.png'; // Assuming hero.png is the image in the screenshot
 
-export default function Login({ onLoginSuccess, onGuestBook }) {
+export default function Login({ onLoginSuccess, onGuestBook, onRegister }) {
   const [nip, setNip] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -184,6 +184,14 @@ export default function Login({ onLoginSuccess, onGuestBook }) {
                   className="w-full bg-[#0b2046] hover:bg-[#071633] text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center"
                 >
                   Buku Tamu
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onRegister}
+                  className="w-full border border-[#0b2046] text-[#0b2046] hover:bg-slate-50 font-semibold py-3.5 px-4 rounded-xl transition-colors"
+                >
+                  Daftar Akun Pemohon
                 </button>
               </div>
             </form>
