@@ -10,35 +10,69 @@ import { api } from '../services/api';
  * 3. 'saved'  - Tanda tangan resmi yang tersimpan di profil akun
  */
 export default function SignatureSelector({
-  mode = 'draw',
-  setMode,
+  // Mode (mendukung mode maupun signatureMode)
+  mode: propMode,
+  signatureMode,
+  setMode: propSetMode,
+  setSignatureMode,
+
+  // Canvas
   canvasRef,
-  hasDrawn,
-  setHasDrawn,
-  selectedFile,
-  setSelectedFile,
+
+  // Status goresan (mendukung hasDrawn maupun hasDrawnSignature)
+  hasDrawn: propHasDrawn,
+  hasDrawnSignature,
+  setHasDrawn: propSetHasDrawn,
+  setHasDrawnSignature,
+
+  // Berkas unggah (mendukung selectedFile maupun selectedSignatureFile)
+  selectedFile: propSelectedFile,
+  selectedSignatureFile,
+  setSelectedFile: propSetSelectedFile,
+  setSelectedSignatureFile,
+
+  // Status tanda tangan akun tersimpan
   hasServerSignature = false,
   serverSignatureUrl = '',
   user = null,
   error = null,
 }) {
+  // Resolve mode & setters with robust fallbacks
+  const currentMode = propMode || signatureMode || 'draw';
+  const handleSetMode = (newMode) => {
+    if (typeof propSetMode === 'function') propSetMode(newMode);
+    if (typeof setSignatureMode === 'function') setSignatureMode(newMode);
+  };
+
+  const currentHasDrawn = propHasDrawn !== undefined ? propHasDrawn : (hasDrawnSignature || false);
+  const handleSetHasDrawn = (val) => {
+    if (typeof propSetHasDrawn === 'function') propSetHasDrawn(val);
+    if (typeof setHasDrawnSignature === 'function') setHasDrawnSignature(val);
+  };
+
+  const currentFile = propSelectedFile || selectedSignatureFile || null;
+  const handleSetFile = (file) => {
+    if (typeof propSetSelectedFile === 'function') propSetSelectedFile(file);
+    if (typeof setSelectedSignatureFile === 'function') setSelectedSignatureFile(file);
+  };
+
   const [filePreview, setFilePreview] = useState(null);
   const isDrawingRef = useRef(false);
 
-  // Sync file preview
+  // Sync file preview whenever currentFile changes
   useEffect(() => {
-    if (selectedFile) {
-      const url = URL.createObjectURL(selectedFile);
+    if (currentFile && currentFile instanceof Blob) {
+      const url = URL.createObjectURL(currentFile);
       setFilePreview(url);
       return () => URL.revokeObjectURL(url);
     } else {
       setFilePreview(null);
     }
-  }, [selectedFile]);
+  }, [currentFile]);
 
   // Canvas drawing handlers
   const getCanvasCoords = (e) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasRef?.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
@@ -50,7 +84,7 @@ export default function SignatureSelector({
   };
 
   const startDrawing = (e) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasRef?.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const { x, y } = getCanvasCoords(e);
@@ -62,12 +96,12 @@ export default function SignatureSelector({
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#003580';
     isDrawingRef.current = true;
-    setHasDrawn(true);
+    handleSetHasDrawn(true);
   };
 
   const draw = (e) => {
     if (!isDrawingRef.current) return;
-    const canvas = canvasRef.current;
+    const canvas = canvasRef?.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const { x, y } = getCanvasCoords(e);
@@ -81,11 +115,11 @@ export default function SignatureSelector({
   };
 
   const clearCanvas = () => {
-    const canvas = canvasRef.current;
+    const canvas = canvasRef?.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasDrawn(false);
+    handleSetHasDrawn(false);
   };
 
   const handleFileChange = (e) => {
@@ -99,9 +133,13 @@ export default function SignatureSelector({
         alert('Ukuran berkas maksimal 5 MB.');
         return;
       }
-      setSelectedFile(file);
+      handleSetFile(file);
     }
   };
+
+  // Cek apakah akun memiliki TTD
+  const hasSavedSig = hasServerSignature || Boolean(user?.has_signature) || Boolean(user?.signature_path);
+  const signatureImgSrc = serverSignatureUrl || api.getSignatureUrl(true);
 
   return (
     <div className="space-y-3">
@@ -116,9 +154,9 @@ export default function SignatureSelector({
           {/* Tab 1: Goresan */}
           <button
             type="button"
-            onClick={() => setMode('draw')}
+            onClick={() => handleSetMode('draw')}
             className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg transition-all ${
-              mode === 'draw'
+              currentMode === 'draw'
                 ? 'bg-white text-[#003580] shadow-xs font-extrabold border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
@@ -130,9 +168,9 @@ export default function SignatureSelector({
           {/* Tab 2: Upload */}
           <button
             type="button"
-            onClick={() => setMode('upload')}
+            onClick={() => handleSetMode('upload')}
             className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg transition-all ${
-              mode === 'upload'
+              currentMode === 'upload'
                 ? 'bg-white text-[#003580] shadow-xs font-extrabold border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
@@ -144,9 +182,9 @@ export default function SignatureSelector({
           {/* Tab 3: Saved */}
           <button
             type="button"
-            onClick={() => setMode('saved')}
+            onClick={() => handleSetMode('saved')}
             className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg transition-all ${
-              mode === 'saved'
+              currentMode === 'saved'
                 ? 'bg-white text-[#003580] shadow-xs font-extrabold border border-slate-200'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
@@ -159,7 +197,7 @@ export default function SignatureSelector({
 
       {/* Konten Sesuai Pilihan */}
       {/* 1. GORESAN KANVAS */}
-      {mode === 'draw' && (
+      {currentMode === 'draw' && (
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-xs">
             <span className="font-semibold text-slate-700">
@@ -188,7 +226,7 @@ export default function SignatureSelector({
               onTouchEnd={stopDrawing}
               className="w-full h-32 cursor-crosshair touch-none bg-white block"
             />
-            {!hasDrawn && (
+            {!currentHasDrawn && (
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center text-slate-400 gap-1 bg-slate-50/40">
                 <PenTool className="w-5 h-5 text-slate-300" />
                 <span className="text-xs font-medium">Klik dan goreskan tanda tangan digital di sini</span>
@@ -197,7 +235,7 @@ export default function SignatureSelector({
           </div>
           <div className="flex justify-between items-center text-[10px] text-slate-500">
             <span>
-              {hasDrawn ? (
+              {currentHasDrawn ? (
                 <span className="text-emerald-700 font-bold flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Tanda tangan tergores di kanvas
                 </span>
@@ -213,7 +251,7 @@ export default function SignatureSelector({
       )}
 
       {/* 2. UPLOAD GAMBAR */}
-      {mode === 'upload' && (
+      {currentMode === 'upload' && (
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-xs">
             <span className="font-semibold text-slate-700">
@@ -233,7 +271,7 @@ export default function SignatureSelector({
               <div className="flex items-center justify-between w-full pt-1.5 border-t border-emerald-200 text-xs">
                 <span className="text-emerald-800 font-bold flex items-center gap-1 truncate max-w-[240px]">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  {selectedFile?.name}
+                  {currentFile?.name}
                 </span>
                 <label className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer underline">
                   Ganti Berkas
@@ -271,7 +309,7 @@ export default function SignatureSelector({
       )}
 
       {/* 3. TTD AKUN TERSIMPAN */}
-      {mode === 'saved' && (
+      {currentMode === 'saved' && (
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-xs">
             <span className="font-semibold text-slate-700">
@@ -279,11 +317,11 @@ export default function SignatureSelector({
             </span>
           </div>
 
-          {hasServerSignature ? (
+          {hasSavedSig ? (
             <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/80 flex flex-col items-center justify-center space-y-2">
               <div className="h-24 flex items-center justify-center p-2 bg-white rounded-lg w-full border border-dashed border-slate-200 shadow-2xs">
                 <img
-                  src={serverSignatureUrl || api.getSignatureUrl(true)}
+                  src={signatureImgSrc}
                   alt="Tanda Tangan Akun"
                   className="max-h-20 object-contain mx-auto"
                 />

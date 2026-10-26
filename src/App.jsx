@@ -110,6 +110,8 @@ export default function App() {
             roleLabel: formatJabatan(res.user.jabatan) || res.user.role || 'Staff',
             location: res.user.unit_kerja,
             role: res.user.role,
+            has_signature: Boolean(res.user.has_signature || res.user.signature_path),
+            signature_path: res.user.signature_path,
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=0b2046&color=fff`,
           });
           setIsAuthenticated(true);
@@ -137,6 +139,8 @@ export default function App() {
       roleLabel: formatJabatan(user.jabatan) || user.role || 'Staff',
       location: user.unit_kerja,
       role: user.role,
+      has_signature: Boolean(user.has_signature || user.signature_path),
+      signature_path: user.signature_path,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=0b2046&color=fff`,
     });
     setIsAuthenticated(true);

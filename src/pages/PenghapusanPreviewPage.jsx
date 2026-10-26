@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
-  FileSpreadsheet,
+  FileText,
   ArrowLeft,
   CheckCircle2,
   Clock,
-  Printer,
+  Download,
   PenTool,
   ShieldCheck,
   AlertTriangle,
@@ -14,16 +14,19 @@ import {
   UserCheck,
   Eraser,
   Loader2,
-  Database,
-  Lock,
-  Scale,
-  FileText,
-  X,
   Check,
-  DollarSign
+  Printer,
+  Edit3,
+  Lock,
+  ExternalLink,
+  Shield,
+  Layers,
+  X,
+  RefreshCw,
+  XCircle,
+  FileDown
 } from 'lucide-react';
 import { api } from '../services/api';
-import KaiLogo from '../components/KaiLogo';
 import SignatureSelector from '../components/SignatureSelector';
 
 export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
@@ -32,18 +35,31 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
   const location = useLocation();
 
   const [doc, setDoc] = useState(null);
+  const [apiUsers, setApiUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  // Tab view: 'sheet' (Lembar Cetak A4) | 'sap' (Rekonsiliasi SAP & Audit Trail)
-  const [activeTab, setActiveTab] = useState('sheet');
+  // Active Tab: 'pdf' (Pratinjau PDF Asli dari Backend) | 'audit' (Alur Verifikasi TTE)
+  const [activeTab, setActiveTab] = useState('pdf');
 
-  // Modal TTE VP States
+  // Backend Preview PDF Blob State
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
+  const iframeRef = useRef(null);
+
+  // Modal Signing States
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+  const [notesInput, setNotesInput] = useState('Disetujui dan diverifikasi sesuai fisik barang.');
   const [pinInput, setPinInput] = useState('123456');
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState(null);
+
+  // Modal Reject States
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
 
   // Canvas TTD & Signature Mode (3 Pilihan: draw | upload | saved)
   const canvasRef = useRef(null);
@@ -65,139 +81,108 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
     }
   }, [user]);
 
-  // Fallback sample DSP-03
-  const sampleFallbackDoc = {
-    id: 301,
-    number: 'FR-PH/TI/DAOP1/10-2026/0031',
-    ref_ba: 'BA-PMS/TI/DAOP1/10-2026/0014',
-    type: 'dsp03',
-    form_code: 'FR.SM/TI/013.001',
-    tanggal: '2026-10-22',
-    pelaksana: {
-      nama: 'Ahmad Fauzi Setiawan, S.T.',
-      nipp: '54892',
-      jabatan: 'Koordinator Tim Eksekusi TI',
-      unit_kerja: 'Unit TI DAOP 1 Jakarta'
-    },
-    lokasi: 'Gudang Logistik & Server Room Juanda Lt. 3, Jakarta Pusat',
-    wilayah: 'DAOP 1 Jakarta',
-    klasifikasi: 'Dimusnahkan (Scrap Afval)',
-    nilai_buku_total: 'Rp 0 (Scrap Nilai Penuh Disusutkan)',
-    sap_posting_status: 'Terhapus SAP FI-AA',
-    items: [
-      {
-        id: 1,
-        nama: 'Server Dell PowerEdge R740 2U',
-        spesifikasi: 'Xeon Silver 4210R / 64GB DDR4 / Dual PSU',
-        jumlah: 1,
-        satuan: 'Unit',
-        serialNumber: 'SN-98214-KAI-SRV',
-        noInventarisSap: 'AST-TI-2018-0941',
-        lokasiTerakhir: 'Rack 04 - Server Farm Juanda',
-        statusSap: 'Scrap (Nilai Buku Rp 0)',
+  // Generate on-the-fly PDF Preview via backend API
+  const generateBackendPdfPreview = async (documentData) => {
+    setIsGeneratingPdf(true);
+    setPdfError(null);
+
+    const d = documentData.data || {};
+    const payload = {
+      type: 'dsp03',
+      data: {
+        nomor_referensi: d.nomor_referensi || d.ref_ba || documentData.ref_number || 'BA-PMS/TI/DAOP1/10-2026/0014',
+        tanggal: d.tanggal || documentData.tanggal || new Date().toISOString().split('T')[0],
+        lokasi: d.lokasi || documentData.lokasi || 'Kantor Pusat Bandung',
+        nama_pelaksana: d.nama_pelaksana || documentData.nama_pelaksana || 'Petugas TI',
+        nipp_pelaksana: d.nipp_pelaksana || documentData.nipp_pelaksana || '-',
+        jabatan_pelaksana: d.jabatan_pelaksana || documentData.jabatan_pelaksana || 'Pelaksana TI',
+        status_kondisi: d.status_kondisi || documentData.status_kondisi || 'Dimusnahkan',
+        saksi: Array.isArray(d.saksi) ? d.saksi.join(', ') : (d.saksi || documentData.saksi || ''),
+        verifikator_1_id: d.verifikator_1_id ? Number(d.verifikator_1_id) : null,
+        verifikator_2_id: d.verifikator_2_id ? Number(d.verifikator_2_id) : null,
       },
-      {
-        id: 2,
-        nama: 'Cisco Catalyst 3850 48-Port PoE',
-        spesifikasi: 'Switch Layer 3 Distribusi Stasiun Gambir',
-        jumlah: 1,
-        satuan: 'Unit',
-        serialNumber: 'MAC-7721-CC-081',
-        noInventarisSap: 'AST-TI-2019-1102',
-        lokasiTerakhir: 'Wiring Closet Lt. 2 DAOP 1',
-        statusSap: 'Hapus Buku Aktiva',
-      },
-      {
-        id: 3,
-        nama: 'Harddisk Enterprise SAS 1.2TB 10K',
-        spesifikasi: 'Penyimpanan Storage SAN Ticketing (x4 Modul)',
-        jumlah: 4,
-        satuan: 'Pcs',
-        serialNumber: 'HD-SAS-KAI-8082-SET',
-        noInventarisSap: 'AST-TI-2020-0054',
-        lokasiTerakhir: 'Storage Shelf Alpha-3 Juanda',
-        statusSap: 'Terhapus SAP FI-AA',
+      items: (documentData.items && documentData.items.length > 0) ? documentData.items.map(it => ({
+        nama_barang: it.nama_barang || it.nama_aset || 'Aset TI',
+        jumlah: Number(it.jumlah) || 1,
+        serial_nomor: it.serial_nomor || '-',
+        no_inventaris: it.no_inventaris || '-',
+        lokasi_aset: it.lokasi_aset || d.lokasi || '-',
+        keterangan: it.keterangan || '-',
+      })) : (d.items || []).map(it => ({
+        nama_barang: it.nama_barang || it.nama_aset || 'Aset TI',
+        jumlah: Number(it.jumlah) || 1,
+        serial_nomor: it.serial_nomor || '-',
+        no_inventaris: it.no_inventaris || '-',
+        lokasi_aset: it.lokasi_aset || d.lokasi || '-',
+        keterangan: it.keterangan || '-',
+      })),
+    };
+
+    try {
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl);
+        setPdfBlobUrl(null);
       }
-    ],
-    saksiList: [
-      { nama: 'Slamet Riyadi', nipp: '49201', role: 'Audit SPI', signed: true },
-      { nama: 'Tri Wahyuni, S.T.', nipp: '55120', role: 'Keuangan', signed: true },
-      { nama: 'Agus Supriyatna', nipp: '61099', role: 'Pengamanan Polsuksa', signed: true }
-    ],
-    vpSigned: true,
-    vpSignedAt: '2026-10-22 14:30 WIB',
-    status: 'approved',
-    status_label: 'Disahkan Penuh & Terhapus SAP',
+
+      let blob = null;
+      // Jika dokumen sudah ada di database, ambil PDF resmi langsung dari endpoint GET /documents/{id}/pdf
+      // agar seluruh stempel TTE yang sudah disetujui otomatis tertempel di file PDF
+      if (documentData?.id && !isNaN(Number(documentData.id))) {
+        try {
+          blob = await api.getDocumentPdfBlob(documentData.id);
+        } catch (fetchErr) {
+          console.warn('Gagal memuat PDF dokumen tersimpan, mencoba endpoint draf preview-pdf:', fetchErr);
+        }
+      }
+
+      if (!blob) {
+        blob = await api.previewPdf(payload);
+      }
+
+      const url = URL.createObjectURL(blob);
+      setPdfBlobUrl(url);
+    } catch (err) {
+      console.error('Gagal menghasilkan pratinjau PDF dari backend:', err);
+      setPdfError(err.message || 'Gagal menghasilkan pratinjau PDF dari backend.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const loadData = async () => {
     setLoading(true);
     setErrorMessage(null);
     try {
+      // 1. Load users for resolving approvers
+      let usersList = [];
+      try {
+        const uRes = await api.getApprovers('all=1').catch(() => null);
+        usersList = Array.isArray(uRes) ? uRes : (uRes?.data || []);
+        setApiUsers(usersList);
+      } catch (err) {
+        console.warn('Failed to load users list:', err);
+      }
+
+      // 2. Fetch document from backend
       let foundDoc = null;
       try {
         const res = await api.getDocument(id);
         const apiData = res?.document || res;
-        if (apiData) {
-          foundDoc = {
-            id: apiData.id,
-            number: apiData.number || apiData.nomor,
-            ref_ba: apiData.data?.nomor_dsp02 || apiData.ref_ba || 'BA-PMS/TI/DAOP1/10-2026/0014',
-            form_code: 'FR.SM/TI/013.001',
-            tanggal: apiData.data?.tanggal || apiData.created_at?.split('T')[0] || '2026-10-22',
-            pelaksana: {
-              nama: apiData.data?.nama_pelaksana || apiData.requester?.name || 'Petugas TI',
-              nipp: apiData.data?.nipp_pelaksana || apiData.requester?.nip || '54892',
-              jabatan: apiData.data?.jabatan_pelaksana || 'Koordinator Tim Eksekusi TI',
-              unit_kerja: apiData.data?.unit_kerja || apiData.requester?.unit_kerja || 'DAOP 1 Jakarta'
-            },
-            lokasi: apiData.data?.lokasi || 'Gudang Logistik Server Juanda',
-            wilayah: apiData.data?.wilayah || 'DAOP 1 Jakarta',
-            klasifikasi: apiData.data?.status_kondisi || 'Dimusnahkan (Scrap Afval)',
-            nilai_buku_total: apiData.data?.nilai_buku ? `Rp ${Number(apiData.data.nilai_buku).toLocaleString('id-ID')}` : 'Rp 0 (Scrap Nilai Buku Nol)',
-            sap_posting_status: apiData.status === 'approved' ? 'Terhapus SAP FI-AA' : 'Menunggu Validasi SAP',
-            items: apiData.items || apiData.data?.items || sampleFallbackDoc.items,
-            saksiList: sampleFallbackDoc.saksiList,
-            vpSigned: apiData.status === 'approved',
-            vpSignedAt: apiData.status === 'approved' ? '2026-10-22 14:30 WIB' : null,
-            status: apiData.status,
-            status_label: apiData.status === 'approved' ? 'Disahkan Penuh & Terhapus SAP' : 'Menunggu Disposisi VP',
-          };
+        if (apiData && (apiData.id || apiData.number)) {
+          foundDoc = apiData;
         }
-      } catch (err) {}
-
-      if (!foundDoc) {
-        const localSaved = JSON.parse(localStorage.getItem('sipakai_dsp03_docs') || '[]');
-        const match = localSaved.find(d => String(d.id) === String(id));
-        if (match) {
-          foundDoc = match;
-        } else if (String(id) === '301') {
-          foundDoc = sampleFallbackDoc;
-        } else if (String(id) === '302') {
-          foundDoc = {
-            ...sampleFallbackDoc,
-            id: 302,
-            number: 'FR-PH/TI/DAOP6/10-2026/0032',
-            ref_ba: 'BA-PMS/TI/DAOP6/10-2026/0015',
-            lokasi: 'Gudang Logistik Stasiun Tugu Yogyakarta',
-            wilayah: 'DAOP 6 Yogyakarta',
-            status: 'pending',
-            status_label: 'Menunggu Otorisasi VP TI & Keuangan',
-            vpSigned: false,
-            vpSignedAt: null
-          };
-        } else {
-          foundDoc = sampleFallbackDoc;
-        }
+      } catch (err) {
+        console.warn('API getDocument failed:', err);
       }
 
-      setDoc(foundDoc);
-
-      if (new URLSearchParams(location.search).get('print') === 'true') {
-        setTimeout(() => window.print(), 800);
+      if (foundDoc) {
+        setDoc(foundDoc);
+        await generateBackendPdfPreview(foundDoc);
+      } else {
+        setErrorMessage('Dokumen Penghapusan Aset TI tidak ditemukan di sistem.');
       }
-    } catch (e) {
-      setDoc(sampleFallbackDoc);
+    } catch (err) {
+      setErrorMessage(err.message || 'Gagal memuat data dokumen');
     } finally {
       setLoading(false);
     }
@@ -205,548 +190,688 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
 
   useEffect(() => {
     loadData();
-  }, [id, location.search]);
+    return () => {
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl);
+      }
+    };
+  }, [id]);
 
-  // Canvas Handlers
-  const startDrawing = (e) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
-
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#003580';
-    isDrawingRef.current = true;
-    setHasDrawnSignature(true);
+  // Clean print handler
+  const handlePrintDocument = () => {
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.contentWindow.print();
+      } catch {
+        window.print();
+      }
+    } else {
+      window.print();
+    }
   };
 
-  const draw = (e) => {
-    if (!isDrawingRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+  // Sign / Approve Action
+  const handleApproveAction = async (e) => {
+    e.preventDefault();
+    setSignError(null);
 
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    isDrawingRef.current = false;
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasDrawnSignature(false);
-  };
-
-  // Sign VP Execution
-  const handleExecuteSignVP = async () => {
-    if (!pinInput || pinInput.length < 6) {
-      setSignError('Masukkan 6-digit PIN KAI Pass Anda.');
+    // Strict validation
+    if (signatureMode === 'draw' && !hasDrawnSignature) {
+      setSignError('Harap bubuhkan goresan tanda tangan Anda pada kanvas terlebih dahulu.');
+      return;
+    }
+    if (signatureMode === 'upload' && !selectedSignatureFile) {
+      setSignError('Harap pilih berkas gambar tanda tangan (PNG/JPG) Anda.');
+      return;
+    }
+    if (signatureMode === 'saved' && !hasServerSignature) {
+      setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Pilih tab Goresan atau Unggah.');
       return;
     }
 
-    // Validasi ketat tanda tangan tidak boleh kosong sesuai opsi yang dipilih
-    if (signatureMode === 'draw') {
-      if (!hasDrawnSignature) {
-        setSignError('Silakan goreskan tanda tangan pada bidang kanvas terlebih dahulu. Tanda tangan tidak boleh kosong.');
-        return;
-      }
-    } else if (signatureMode === 'upload') {
-      if (!selectedSignatureFile) {
-        setSignError('Silakan pilih berkas gambar tanda tangan (PNG/JPG) terlebih dahulu. Tanda tangan tidak boleh kosong.');
-        return;
-      }
-    } else if (signatureMode === 'saved') {
-      if (!hasServerSignature) {
-        setSignError('Akun Anda belum memiliki tanda tangan tersimpan. Silakan pilih opsi Goresan Langsung atau Upload Gambar.');
-        return;
-      }
+    if (!pinInput || pinInput.length < 4) {
+      setSignError('PIN KAI Pass minimal 4 digit.');
+      return;
     }
 
     setIsSigning(true);
-    setSignError(null);
-
     try {
-      // 1. Sinkronisasi berkas tanda tangan baru (goresan atau upload) ke backend profil pengguna
-      if (signatureMode === 'upload' && selectedSignatureFile) {
-        try {
-          const formData = new FormData();
-          formData.append('signature', selectedSignatureFile);
-          formData.append('pin', pinInput.trim());
-          await api.uploadSignature(formData);
-          setHasServerSignature(true);
-        } catch (uploadErr) {
-          console.warn('Gagal upload tanda tangan PNG:', uploadErr);
-        }
-      } else if (signatureMode === 'draw' && hasDrawnSignature && canvasRef.current) {
-        try {
-          const blob = await new Promise((resolve) => {
-            canvasRef.current.toBlob(resolve, 'image/png');
-          });
-          if (blob) {
-            const formData = new FormData();
-            formData.append('signature', blob, 'signature_draw.png');
-            formData.append('pin', pinInput.trim());
-            await api.uploadSignature(formData);
-            setHasServerSignature(true);
-          }
-        } catch (uploadErr) {
-          console.warn('Gagal sinkronisasi tanda tangan goresan:', uploadErr);
-        }
+      // 1. Simpan tanda tangan baru jika user memilih goresan kanvas atau upload berkas
+      if (signatureMode === 'draw' && canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL('image/png');
+        const resBlob = await fetch(dataUrl);
+        const blob = await resBlob.blob();
+        const formData = new FormData();
+        formData.append('signature', blob, 'signature.png');
+        await api.uploadSignature(formData);
+      } else if (signatureMode === 'upload' && selectedSignatureFile) {
+        const formData = new FormData();
+        formData.append('signature', selectedSignatureFile);
+        await api.uploadSignature(formData);
       }
 
-      await new Promise(r => setTimeout(r, 900));
-
-      const updatedDoc = {
-        ...doc,
-        vpSigned: true,
-        vpSignedAt: new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
-        status: 'approved',
-        status_label: 'Disahkan Penuh & Terhapus SAP',
-        sap_posting_status: 'Terhapus SAP FI-AA'
-      };
-
-      setDoc(updatedDoc);
-
-      const localSaved = JSON.parse(localStorage.getItem('sipakai_dsp03_docs') || '[]');
-      const updatedList = localSaved.map(d => String(d.id) === String(doc.id) ? updatedDoc : d);
-      localStorage.setItem('sipakai_dsp03_docs', JSON.stringify(updatedList));
+      // 2. Eksekusi pengesahan: jika masih draft, submit dokumen; jika sedang in_review, approve persetujuan
+      if (isDraft) {
+        const v1Id = d.verifikator_1_id || doc?.data?.verifikator_1_id;
+        await api.submitDocument(id, {
+          approver_id: Number(v1Id),
+          note: notesInput || 'Mengajukan formulir penghapusan aset TI.',
+        });
+        setSuccessMessage('Formulir berhasil disahkan oleh pelaksana dan diajukan ke Verifikator I!');
+      } else {
+        const res = await api.actionDocument(id, {
+          action: 'approve',
+          notes: notesInput || 'Disetujui dan disahkan secara digital via TTE KAI Pass.',
+          pin: pinInput,
+        });
+        setSuccessMessage(res.message || 'Persetujuan dan tanda tangan elektronik berhasil dibubuhkan!');
+      }
 
       setIsSignModalOpen(false);
-      setSuccessMessage('TTE Pengesahan VP IT Operation berhasil dibubuhkan dan dokumen terhapus di SAP!');
-      setTimeout(() => setSuccessMessage(null), 4000);
 
       if (onDocumentUpdated) onDocumentUpdated();
+      await loadData();
     } catch (err) {
-      setSignError(err.message || 'Terjadi kesalahan saat memproses tanda tangan.');
+      console.error('Sign error:', err);
+      setSignError(err.message || 'Gagal memproses pengesahan tanda tangan.');
     } finally {
       setIsSigning(false);
     }
   };
 
-  if (loading || !doc) {
+  // Reject Action
+  const handleRejectAction = async (e) => {
+    e.preventDefault();
+    if (!rejectReason.trim()) {
+      alert('Alasan penolakan / revisi wajib diisi.');
+      return;
+    }
+
+    setIsRejecting(true);
+    try {
+      const res = await api.actionDocument(id, {
+        action: 'reject',
+        notes: rejectReason,
+      });
+      setSuccessMessage(res.message || 'Dokumen berhasil ditolak / dikembalikan untuk revisi.');
+      setIsRejectModalOpen(false);
+
+      if (onDocumentUpdated) onDocumentUpdated();
+      await loadData();
+    } catch (err) {
+      alert(err.message || 'Gagal menolak dokumen.');
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500">
-        <Loader2 className="w-8 h-8 animate-spin text-[#003580] mb-2" />
-        <p className="text-xs font-semibold">Memuat Lembar Formulir Penghapusan Aktiva Tetap...</p>
+      <div className="w-full max-w-6xl mx-auto py-20 text-center">
+        <Loader2 className="w-10 h-10 text-[#0b2046] animate-spin mx-auto mb-4" />
+        <h3 className="text-base font-bold text-slate-800">Memuat Formulir Penghapusan Aset TI...</h3>
+        <p className="text-xs text-slate-500 mt-1">Mengambil dokumen resmi dan memverifikasi sertifikat TTE</p>
       </div>
     );
   }
 
-  const isApproved = doc.status === 'approved';
-
-  return (
-    <div className="w-full max-w-5xl mx-auto space-y-6 pb-24 select-none">
-      {/* Toast Alert */}
-      {successMessage && (
-        <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl shadow-lg flex items-center gap-3 animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span className="text-xs font-semibold">{successMessage}</span>
-          <button type="button" onClick={() => setSuccessMessage(null)} className="text-emerald-700 ml-2">✕</button>
-        </div>
-      )}
-
-      {/* Top Bar Navigation & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-        <div className="flex items-center gap-3">
+  if (errorMessage && !doc) {
+    return (
+      <div className="w-full max-w-3xl mx-auto py-16 px-4">
+        <div className="bg-white p-8 rounded-2xl border border-rose-200 text-center shadow-sm">
+          <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+          <h2 className="text-lg font-bold text-slate-800">Gagal Membuka Dokumen</h2>
+          <p className="text-sm text-slate-600 mt-2">{errorMessage}</p>
           <button
             type="button"
             onClick={() => navigate('/penghapusan')}
-            className="p-2 bg-white hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors shadow-2xs"
-            title="Kembali ke Daftar"
+            className="mt-6 px-5 py-2.5 bg-[#0b2046] text-white text-xs font-bold rounded-xl"
           >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200">
-                DSP-03 &bull; PENGHAPUSAN AKTIVA TETAP SAP
-              </span>
-              <span className="text-xs font-mono font-bold text-slate-700">{doc.number}</span>
-            </div>
-            <h1 className="text-lg md:text-xl font-black text-slate-900 tracking-tight mt-0.5">
-              Pratinjau Formulir Penghapusan Aset TI
-            </h1>
-          </div>
-        </div>
-
-        {/* Tab & Action Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('sheet')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'sheet' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'}`}
-            >
-              Lembar Cetak A4
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('sap')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'sap' ? 'bg-white text-[#003580] shadow-2xs' : 'text-slate-500 hover:text-slate-900'}`}
-            >
-              Rekonsiliasi SAP & Audit
-            </button>
-          </div>
-
-          {!isApproved && (
-            <button
-              type="button"
-              onClick={() => setIsSignModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f05a22] hover:bg-[#d94e1b] text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
-            >
-              <PenTool className="w-4 h-4" />
-              <span>Otorisasi & TTE VP IT</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
-          >
-            <Printer className="w-4 h-4 text-sky-400" />
-            <span>Cetak Lembar A4</span>
+            Kembali ke Daftar Formulir
           </button>
         </div>
       </div>
+    );
+  }
 
-      {/* TAB 1: LEMBAR CETAK STANDAR KAI A4 */}
-      {activeTab === 'sheet' && (
-        <div className="bg-white rounded-2xl border border-slate-300 shadow-lg p-8 md:p-12 font-serif text-slate-900 max-w-4xl mx-auto print:p-0 print:border-none print:shadow-none print:max-w-none">
-          {/* Header Kop KAI */}
-          <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4 mb-6">
-            <div className="flex items-center gap-4">
-              <KaiLogo className="h-12 w-auto" />
-              <div>
-                <h2 className="text-base font-extrabold uppercase tracking-wide text-[#003580] font-sans">
-                  PT KERETA API INDONESIA (PERSERO)
-                </h2>
-                <h3 className="text-xs font-bold text-slate-700 font-sans uppercase">
-                  DIREKTORAT NIAGA & TEKNOLOGI INFORMASI - UNIT TI
-                </h3>
-                <p className="text-[10px] text-slate-500 font-sans mt-0.5">
-                  Rekonsiliasi Aktiva Tetap SAP FI-AA &bull; DAOP 1 Jakarta
-                </p>
-              </div>
-            </div>
+  const d = doc?.data || {};
+  const docNumber = doc?.number || doc?.nomor || `FR-PH/TI/000${doc?.id}/2026`;
+  const refNumber = d.nomor_referensi || d.ref_ba || '-';
+  const docDate = d.tanggal || doc?.submitted_at || doc?.created_at;
+  const formattedDate = docDate
+    ? new Date(docDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    : '-';
 
-            <div className="text-right font-sans">
-              <span className="inline-block px-2.5 py-1 bg-slate-100 border border-slate-300 rounded text-[10px] font-extrabold text-slate-800 uppercase tracking-wider">
-                {doc.form_code || 'FR.SM/TI/013.001'} (DSP-03)
+  const isApproved = doc?.status === 'approved' || doc?.status === 'signed';
+  const isDraft = doc?.status === 'draft';
+  const isRejected = doc?.status === 'rejected';
+
+  // Check if current user is the pending approver
+  const currentPendingApproverId = doc?.penyetuju_id;
+  const isCurrentApprover = Boolean(
+    user && currentPendingApproverId && Number(user.id) === Number(currentPendingApproverId)
+  );
+  const canApprove = isCurrentApprover || (user?.role === 'super_admin' && !isApproved && !isDraft);
+
+  // Status Approver Steps
+  const v1User = apiUsers.find(u => Number(u.id) === Number(d.verifikator_1_id));
+  const v2User = apiUsers.find(u => Number(u.id) === Number(d.verifikator_2_id));
+
+  // Determine current step index
+  const approvalChain = [d.verifikator_1_id, d.verifikator_2_id].filter(Boolean);
+  let currentStepIdx = 0;
+  if (currentPendingApproverId && approvalChain.length > 0) {
+    const idx = approvalChain.findIndex(aid => Number(aid) === Number(currentPendingApproverId));
+    if (idx !== -1) currentStepIdx = idx;
+  }
+
+  return (
+    <div className="w-full max-w-7xl mx-auto space-y-6 pb-20">
+      {/* Toast Alert */}
+      {successMessage && (
+        <div className="fixed top-5 right-5 z-50 p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2.5 shadow-xl animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>{successMessage}</span>
+          <button
+            type="button"
+            onClick={() => setSuccessMessage(null)}
+            className="ml-3 text-emerald-600 hover:text-emerald-900"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Header Info Banner */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="flex items-start gap-4">
+          <button
+            type="button"
+            onClick={() => navigate('/penghapusan')}
+            className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-slate-600 transition-colors shadow-2xs mt-1"
+            title="Kembali ke Daftar Formulir"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 font-bold text-xs rounded border border-blue-200">
+                DSP-03 &bull; FR.SM/TI/015.007/10-2020
               </span>
-              <p className="text-[10px] text-slate-500 mt-1">Edisi: Oktober 2026</p>
+              <span className="text-xs text-slate-400">Versi: 02-2020</span>
+              {isApproved && (
+                <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Sah &amp; Disetujui Penuh</span>
+                </span>
+              )}
+              {!isApproved && !isDraft && (
+                <span className="px-2.5 py-0.5 bg-orange-50 text-orange-700 font-bold text-xs rounded-full border border-orange-200 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Dalam Proses Verifikasi</span>
+                </span>
+              )}
+              {isDraft && (
+                <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-full border border-slate-300 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Draf Formulir</span>
+                </span>
+              )}
             </div>
-          </div>
 
-          {/* Title & Document Number */}
-          <div className="text-center space-y-1 mb-6 font-sans">
-            <h1 className="text-base md:text-lg font-black tracking-wide text-slate-900 uppercase underline decoration-2 underline-offset-4">
-              FORMULIR PENGHAPUSAN AKTIVA TETAP / ASET TEKNOLOGI INFORMASI
+            <h1 className="text-2xl font-bold text-[#0b2046] mt-1.5 flex items-center gap-3">
+              {docNumber}
             </h1>
-            <p className="text-xs font-mono font-bold text-slate-700">
-              Nomor: {doc.number}
-            </p>
-            <p className="text-[11px] text-slate-500">
-              Dasar Berita Acara Pemusnahan DSP-02 Nomor: <strong>{doc.ref_ba}</strong>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
+              <span>No. Ref: <strong className="text-slate-700">{refNumber}</strong></span>
+              <span>&bull;</span>
+              <span>Tanggal: <strong className="text-slate-700">{formattedDate}</strong></span>
+              <span>&bull;</span>
+              <span>Pelaksana: <strong className="text-slate-700">{d.nama_pelaksana || doc?.requester?.name || 'Petugas TI'}</strong></span>
+              <span>&bull;</span>
+              <span>Lokasi: <strong className="text-slate-700">{d.lokasi || '-'}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={isGeneratingPdf}
+            className="p-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl transition-colors shadow-2xs"
+            title="Segarkan Dokumen"
+          >
+            <RefreshCw className={`w-4 h-4 ${isGeneratingPdf ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrintDocument}
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors shadow-2xs"
+          >
+            <Printer className="w-4 h-4 text-slate-500" />
+            <span>Cetak Dokumen</span>
+          </button>
+
+          {pdfBlobUrl && (
+            <a
+              href={pdfBlobUrl}
+              download={`Formulir_Penghapusan_Aset_TI_${docNumber}.pdf`}
+              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs"
+            >
+              <Download className="w-4 h-4" />
+              <span>Unduh PDF Resmi</span>
+            </a>
+          )}
+
+          {isDraft && (
+            <>
+              <button
+                type="button"
+                onClick={() => navigate(`/penghapusan/${doc.id}/edit`)}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>Ubah Draf</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSignModalOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold transition-colors shadow-sm shadow-[#f05a22]/30"
+              >
+                <ShieldCheck className="w-4 h-4 text-white" />
+                <span>Tanda Tangani &amp; Ajukan</span>
+              </button>
+            </>
+          )}
+
+          {canApprove && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRejectModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold transition-colors shadow-2xs"
+              >
+                <XCircle className="w-4 h-4 text-rose-600" />
+                <span>Tolak / Revisi</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsSignModalOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold transition-colors shadow-sm shadow-[#f05a22]/30"
+              >
+                <ShieldCheck className="w-4 h-4 text-white" />
+                <span>Beri Persetujuan &amp; TTE</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs View */}
+      <div className="flex border-b border-slate-200 bg-white px-6 pt-3 rounded-t-2xl shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setActiveTab('pdf')}
+          className={`flex items-center gap-2 px-4 py-3 border-b-2 text-xs font-bold transition-all ${
+            activeTab === 'pdf'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Pratinjau Dokumen PDF Resmi (DSP-03)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('audit')}
+          className={`flex items-center gap-2 px-4 py-3 border-b-2 text-xs font-bold transition-all ${
+            activeTab === 'audit'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Alur Verifikasi TTE &amp; Saksi</span>
+        </button>
+      </div>
+
+      {/* TAB 1: PDF VIEWER */}
+      {activeTab === 'pdf' && (
+        <div className="bg-white rounded-b-2xl border-x border-b border-slate-200 p-6 shadow-xs">
+          <div className="w-full h-[850px] bg-slate-100 rounded-xl border border-slate-200 overflow-hidden relative">
+            {isGeneratingPdf && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-2xs flex flex-col items-center justify-center z-10">
+                <Loader2 className="w-8 h-8 text-[#0b2046] animate-spin mb-3" />
+                <p className="text-sm font-bold text-slate-800">Menghasilkan Dokumen PDF dari Server...</p>
+                <p className="text-xs text-slate-500 mt-1">Mengintegrasikan stempel tanda tangan resmi dan metadata dokumen</p>
+              </div>
+            )}
+
+            {pdfError ? (
+              <div className="p-8 text-center max-w-md mx-auto my-20 bg-white rounded-2xl border border-rose-200 shadow-sm">
+                <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+                <h4 className="font-bold text-base text-slate-800">Gagal Merender PDF</h4>
+                <p className="text-xs text-slate-500 mt-2">{pdfError}</p>
+                <button
+                  type="button"
+                  onClick={() => generateBackendPdfPreview(doc)}
+                  className="mt-5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold"
+                >
+                  Coba Muat Ulang
+                </button>
+              </div>
+            ) : pdfBlobUrl ? (
+              <iframe
+                ref={iframeRef}
+                src={pdfBlobUrl}
+                title="Pratinjau PDF DSP-03"
+                className="w-full h-full border-none"
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: AUDIT & ALUR VERIFIKASI */}
+      {activeTab === 'audit' && (
+        <div className="bg-white rounded-b-2xl border-x border-b border-slate-200 p-6 shadow-xs space-y-6">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="text-base font-bold text-[#0b2046]">Daftar Penandatangan Dokumen DSP-03</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Alur penandatanganan berantai dari pelaksana, verifikator penyetuju, pejabat yang mengetahui, hingga saksi
             </p>
           </div>
 
-          {/* Body Konsiderans */}
-          <div className="text-xs md:text-sm text-justify leading-relaxed space-y-3 mb-6">
-            <p>
-              Sehubungan dengan telah dilaksanakannya pemusnahan fisik aset teknologi informasi sesuai dengan <strong>Berita Acara Pemusnahan (DSP-02) Nomor {doc.ref_ba}</strong>, maka bersama ini diajukan permohonan <strong>De-registrasi dan Penghapusan Aktiva Tetap</strong> dari sistem pembukuan SAP FI-AA PT Kereta Api Indonesia (Persero) dengan rincian sebagai berikut:
-            </p>
-
-            <div className="pl-4 space-y-1.5 font-sans text-xs bg-slate-50/60 p-3.5 rounded-lg border border-slate-200">
-              <div className="grid grid-cols-12 gap-1">
-                <span className="col-span-4 font-semibold text-slate-600">Tanggal Pengajuan</span>
-                <span className="col-span-8 font-bold text-slate-900">: {doc.tanggal}</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 1. Pelaksana (Dilakukan) */}
+            <div className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Dilakukan</span>
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[11px] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Pelaksana</span>
+                </span>
               </div>
-              <div className="grid grid-cols-12 gap-1">
-                <span className="col-span-4 font-semibold text-slate-600">Pelaksana Eksekusi TI</span>
-                <span className="col-span-8 font-bold text-slate-900">: {doc.pelaksana?.nama} (NIPP. {doc.pelaksana?.nipp})</span>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-[#0b2046]">{d.nama_pelaksana || 'Petugas Pelaksana TI'}</h4>
+                <p className="text-xs text-slate-500 font-mono">NIPP: {d.nipp_pelaksana || '-'}</p>
+                <p className="text-xs text-slate-600">{d.jabatan_pelaksana || 'Pelaksana TI'}</p>
               </div>
-              <div className="grid grid-cols-12 gap-1">
-                <span className="col-span-4 font-semibold text-slate-600">Lokasi / Server Room</span>
-                <span className="col-span-8 font-bold text-slate-900">: {doc.lokasi}</span>
-              </div>
-              <div className="grid grid-cols-12 gap-1">
-                <span className="col-span-4 font-semibold text-slate-600">Klasifikasi Penghapusan</span>
-                <span className="col-span-8 font-bold text-slate-900">: {doc.klasifikasi}</span>
-              </div>
-              <div className="grid grid-cols-12 gap-1">
-                <span className="col-span-4 font-semibold text-slate-600">Status Buku SAP</span>
-                <span className="col-span-8 font-bold text-emerald-800">: {doc.sap_posting_status || 'Terhapus SAP FI-AA'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tabel Inventaris Aktiva Tetap SAP */}
-          <div className="mb-6 font-sans">
-            <table className="w-full text-left text-xs border border-slate-300">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 border-b border-slate-300 text-center font-bold">
-                  <th className="py-2 px-2 border-r border-slate-300 w-8">No</th>
-                  <th className="py-2 px-3 border-r border-slate-300 text-left">Nama Aset TI</th>
-                  <th className="py-2 px-3 border-r border-slate-300 text-left">Spesifikasi / Serial Number</th>
-                  <th className="py-2 px-3 border-r border-slate-300 text-left">No. Inventaris SAP</th>
-                  <th className="py-2 px-2 border-r border-slate-300 w-16">Jumlah</th>
-                  <th className="py-2 px-3 text-left">Status De-registrasi SAP</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {doc.items?.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 text-[11px]">
-                    <td className="py-2 px-2 text-center border-r border-slate-200 font-bold">{idx + 1}</td>
-                    <td className="py-2 px-3 border-r border-slate-200 font-bold text-slate-900">{item.nama}</td>
-                    <td className="py-2 px-3 border-r border-slate-200 text-slate-600">
-                      <div>{item.spesifikasi}</div>
-                      <div className="text-[10px] font-mono text-slate-400">{item.serialNumber}</div>
-                    </td>
-                    <td className="py-2 px-3 border-r border-slate-200 font-mono font-bold text-[#003580]">{item.noInventarisSap}</td>
-                    <td className="py-2 px-2 text-center border-r border-slate-200 font-bold">{item.jumlah} {item.satuan || 'Unit'}</td>
-                    <td className="py-2 px-3 font-semibold text-emerald-800">{item.statusSap || 'Scrap (Nilai Buku Rp 0)'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pernyataan Penutup */}
-          <div className="text-xs md:text-sm text-justify leading-relaxed space-y-2 mb-8">
-            <p>
-              Dengan ditandatanganinya formulir ini, maka nomor-nomor aktiva tetap di atas telah resmi dikeluarkan dari daftar inventaris aktif, nilai buku disesuaikan menjadi Rp 0 (Scrap), dan hak pemakaian dinyatakan selesai secara permanen.
-            </p>
-          </div>
-
-          {/* Tanda Tangan Komite & VP IT */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center font-sans text-xs border-t border-slate-200 pt-6">
-            {/* Pelaksana */}
-            <div className="flex flex-col justify-between h-40 p-2 bg-slate-50/50 rounded-lg border border-slate-200">
-              <div>
-                <p className="font-bold text-slate-700">Pelaksana Eksekusi,</p>
-                <p className="text-[10px] text-slate-500">Unit Teknologi Informasi</p>
-              </div>
-
-              <div className="py-1">
-                <div className="inline-flex flex-col items-center">
-                  <div className="w-10 h-10 rounded border border-blue-300 bg-blue-50/80 flex items-center justify-center">
-                    <ShieldCheck className="w-6 h-6 text-[#003580]" />
-                  </div>
-                  <span className="text-[8px] text-[#003580] font-bold mt-0.5">TTE VALID BSrE</span>
-                </div>
-              </div>
-
-              <div>
-                <p className="font-bold underline text-slate-900">{doc.pelaksana?.nama}</p>
-                <p className="text-[10px] text-slate-500">NIPP. {doc.pelaksana?.nipp}</p>
+              <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
+                <span>Lokasi: {d.lokasi || '-'}</span>
               </div>
             </div>
 
-            {/* Saksi SPI */}
-            <div className="flex flex-col justify-between h-40 p-2 bg-slate-50/50 rounded-lg border border-slate-200">
-              <div>
-                <p className="font-bold text-slate-700">Saksi I (Audit SPI),</p>
-                <p className="text-[10px] text-slate-500">Satuan Pengawasan Intern</p>
-              </div>
-
-              <div className="py-1">
-                <div className="inline-flex flex-col items-center">
-                  <div className="w-10 h-10 rounded border border-emerald-300 bg-emerald-50/80 flex items-center justify-center">
-                    <ShieldCheck className="w-6 h-6 text-emerald-700" />
-                  </div>
-                  <span className="text-[8px] text-emerald-800 font-bold mt-0.5">TTE VALID BSrE</span>
-                </div>
-              </div>
-
-              <div>
-                <p className="font-bold underline text-slate-900">Slamet Riyadi</p>
-                <p className="text-[10px] text-slate-500">NIPP. 49201</p>
-              </div>
-            </div>
-
-            {/* Saksi Keuangan */}
-            <div className="flex flex-col justify-between h-40 p-2 bg-slate-50/50 rounded-lg border border-slate-200">
-              <div>
-                <p className="font-bold text-slate-700">Saksi II (Keuangan),</p>
-                <p className="text-[10px] text-slate-500">Seksi Keuangan & Aset</p>
-              </div>
-
-              <div className="py-1">
-                <div className="inline-flex flex-col items-center">
-                  <div className="w-10 h-10 rounded border border-emerald-300 bg-emerald-50/80 flex items-center justify-center">
-                    <ShieldCheck className="w-6 h-6 text-emerald-700" />
-                  </div>
-                  <span className="text-[8px] text-emerald-800 font-bold mt-0.5">TTE VALID BSrE</span>
-                </div>
-              </div>
-
-              <div>
-                <p className="font-bold underline text-slate-900">Tri Wahyuni, S.T.</p>
-                <p className="text-[10px] text-slate-500">NIPP. 55120</p>
-              </div>
-            </div>
-
-            {/* Mengetahui VP IT */}
-            <div className="flex flex-col justify-between h-40 p-2 bg-slate-50/50 rounded-lg border border-slate-200">
-              <div>
-                <p className="font-bold text-slate-700">Mengetahui & Menyetujui,</p>
-                <p className="text-[10px] text-slate-500">VP IT Operation</p>
-              </div>
-
-              <div className="py-1">
-                {doc.vpSigned ? (
-                  <div className="inline-flex flex-col items-center">
-                    <div className="w-10 h-10 rounded border border-purple-300 bg-purple-50/80 flex items-center justify-center">
-                      <ShieldCheck className="w-6 h-6 text-purple-700" />
-                    </div>
-                    <span className="text-[8px] text-purple-800 font-bold mt-0.5">DISAHKAN VP</span>
-                  </div>
+            {/* 2. Verifikator 1 (Disetujui) */}
+            <div className={`p-5 rounded-2xl border space-y-3 ${
+              isApproved || currentStepIdx > 0
+                ? 'border-emerald-200 bg-emerald-50/30'
+                : 'border-slate-200 bg-slate-50/60'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Disetujui</span>
+                {isApproved || currentStepIdx > 0 ? (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[11px] font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Disetujui</span>
+                  </span>
                 ) : (
-                  <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Menunggu Disposisi
+                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 border border-orange-200 rounded text-[11px] font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Menunggu</span>
                   </span>
                 )}
               </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-[#0b2046]">
+                  {v1User ? (v1User.nama || v1User.name) : 'Pejabat Penyetuju (Verifikator I)'}
+                </h4>
+                <p className="text-xs text-slate-500 font-mono">NIPP: {v1User?.nip || '-'}</p>
+                <p className="text-xs text-slate-600">
+                  {v1User ? (typeof v1User.jabatan === 'object' ? v1User.jabatan?.nama : (v1User.jabatan || 'Penyetuju')) : 'Verifikator I'}
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
+                <span>Tahap 1 Verifikasi TTE</span>
+              </div>
+            </div>
 
-              <div>
-                <p className="font-bold underline text-slate-900">Ir. Bambang Suryo Pratama, M.T.</p>
-                <p className="text-[10px] text-slate-500">NIPP. 48901</p>
+            {/* 3. Verifikator 2 (Mengetahui) */}
+            <div className={`p-5 rounded-2xl border space-y-3 ${
+              isApproved
+                ? 'border-emerald-200 bg-emerald-50/30'
+                : 'border-slate-200 bg-slate-50/60'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Mengetahui</span>
+                {isApproved ? (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[11px] font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Mengetahui</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-300 rounded text-[11px] font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-500" />
+                    <span>Tahap 2</span>
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-[#0b2046]">
+                  {v2User ? (v2User.nama || v2User.name) : 'Pejabat Mengetahui (Verifikator II)'}
+                </h4>
+                <p className="text-xs text-slate-500 font-mono">NIPP: {v2User?.nip || '-'}</p>
+                <p className="text-xs text-slate-600">
+                  {v2User ? (typeof v2User.jabatan === 'object' ? v2User.jabatan?.nama : (v2User.jabatan || 'Pimpinan Unit')) : 'Verifikator II'}
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
+                <span>Tahap 2 Pengesahan Akhir</span>
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* TAB 2: REKONSILIASI SAP & AUDIT */}
-      {activeTab === 'sap' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-2xs space-y-6">
-          <div className="border-b border-slate-100 pb-4">
-            <h2 className="text-base font-bold text-slate-900">Status Posting De-registrasi SAP FI-AA</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Integrasi sistem pembukuan aktiva tetap ERP SAP KAI</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">SAP TRANSACTION CODE:</span>
-              <p className="font-mono font-bold text-slate-900 text-sm">ABAVN (Asset Retirement by Scrap)</p>
-              <p className="text-[11px] text-slate-500">Penghapusan aktiva tanpa pendapatan penjualan.</p>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">SAP ASSET CLASS:</span>
-              <p className="font-mono font-bold text-slate-900 text-sm">AST-IT-200 (Hardware & Server)</p>
-              <p className="text-[11px] text-slate-500">Sub-ledger aktiva tetap teknologi informasi.</p>
-            </div>
-
-            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1.5">
-              <span className="text-[10px] font-bold text-emerald-700 uppercase">POSTING STATUS:</span>
-              <p className="font-mono font-bold text-emerald-900 text-sm">SAP DOCUMENT POSTED ✓</p>
-              <p className="text-[11px] text-emerald-700">Buku inventaris berhasil dimutasi ke scrap.</p>
-            </div>
+          {/* Saksi Box */}
+          <div className="p-5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-blue-600" />
+              <span>Saksi - Saksi Penghapusan Aset</span>
+            </h4>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {Array.isArray(d.saksi)
+                ? d.saksi.join(', ')
+                : (d.saksi || 'Belum ada data saksi tercatat.')}
+            </p>
           </div>
         </div>
       )}
 
-      {/* MODAL TTE OTORISASI VP IT */}
+      {/* MODAL TTE PERSARATAN PENGESAHAN */}
       {isSignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-orange-100 text-[#f05a22] flex items-center justify-center">
-                  <PenTool className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Otorisasi Penghapusan Aktiva SAP</h3>
-                  <p className="text-[11px] text-slate-500">Pejabat Otorisator: Vice President IT Operation</p>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 max-h-[90vh]">
+            <div className="px-6 py-4 bg-[#0b2046] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Pengesahan TTE Formulir Penghapusan Aset TI</span>
+                </h3>
+                <p className="text-xs text-slate-300 font-mono mt-0.5">{docNumber}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSignModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="p-1.5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {signError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-semibold">
-                {signError}
+            <form onSubmit={handleApproveAction} className="p-6 overflow-y-auto space-y-4 flex-1">
+              {signError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{signError}</span>
+                </div>
+              )}
+
+              {/* Signature Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Bentuk Tanda Tangan Elektronik <span className="text-rose-500">*</span>
+                </label>
+                <SignatureSelector
+                  mode={signatureMode}
+                  setMode={setSignatureMode}
+                  signatureMode={signatureMode}
+                  setSignatureMode={setSignatureMode}
+                  canvasRef={canvasRef}
+                  hasDrawn={hasDrawnSignature}
+                  setHasDrawn={setHasDrawnSignature}
+                  hasDrawnSignature={hasDrawnSignature}
+                  setHasDrawnSignature={setHasDrawnSignature}
+                  selectedFile={selectedSignatureFile}
+                  setSelectedFile={setSelectedSignatureFile}
+                  selectedSignatureFile={selectedSignatureFile}
+                  setSelectedSignatureFile={setSelectedSignatureFile}
+                  hasServerSignature={hasServerSignature}
+                  serverSignatureUrl={serverSignatureUrl}
+                  user={user}
+                />
               </div>
-            )}
 
-            {/* Komponen Pemilih Tanda Tangan: 3 Opsi dengan Validasi Ketat */}
-            <SignatureSelector
-              mode={signatureMode}
-              setMode={setSignatureMode}
-              canvasRef={canvasRef}
-              hasDrawn={hasDrawnSignature}
-              setHasDrawn={setHasDrawnSignature}
-              selectedFile={selectedSignatureFile}
-              setSelectedFile={setSelectedSignatureFile}
-              hasServerSignature={hasServerSignature}
-              serverSignatureUrl={serverSignatureUrl}
-              user={user}
-            />
+              {/* PIN KAI Pass */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  PIN Otorisasi KAI Pass <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    maxLength={8}
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    placeholder="Masukkan 6 digit PIN KAI Pass"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 tracking-widest font-mono"
+                    required
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Default PIN simulasi: 123456</p>
+              </div>
 
-            {/* PIN Input */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-800">
-                Masukkan 6-Digit PIN KAI Pass:
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                placeholder="••••••"
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono tracking-widest text-center font-bold focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#f05a22]"
-              />
-              <span className="text-[11px] text-slate-400">PIN default: 123456</span>
-            </div>
+              {/* Catatan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Verifikasi / Disposisi
+                </label>
+                <textarea
+                  rows={2}
+                  value={notesInput}
+                  onChange={(e) => setNotesInput(e.target.value)}
+                  placeholder="Catatan persetujuan..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              {/* Submit Buttons */}
+              <div className="pt-2 flex items-center gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsSignModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSigning}
+                  className="px-5 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm shadow-[#f05a22]/30"
+                >
+                  {isSigning ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Mengesahkan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Sahkan &amp; Tandatangani</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REJECT */}
+      {isRejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 bg-rose-700 text-white flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <XCircle className="w-4 h-4" />
+                <span>Tolak / Kembalikan Formulir Penghapusan</span>
+              </h3>
               <button
                 type="button"
-                onClick={() => setIsSignModalOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                onClick={() => setIsRejectModalOpen(false)}
+                className="p-1.5 hover:bg-white/10 rounded-lg text-slate-200 hover:text-white"
               >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={isSigning}
-                onClick={handleExecuteSignVP}
-                className="px-5 py-2 bg-[#f05a22] hover:bg-[#d94e1b] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2"
-              >
-                {isSigning ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Mengesahkan...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Sahkan & Posting SAP</span>
-                  </>
-                )}
+                <X className="w-5 h-5" />
               </button>
             </div>
+
+            <form onSubmit={handleRejectAction} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Alasan Penolakan / Catatan Revisi <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Jelaskan alasan penolakan atau bagian yang harus direvisi oleh pelaksana..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  required
+                />
+              </div>
+
+              <div className="pt-2 flex items-center gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsRejectModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRejecting}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2"
+                >
+                  {isRejecting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4" />
+                      <span>Kirim Penolakan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
