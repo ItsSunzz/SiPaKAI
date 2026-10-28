@@ -5,6 +5,35 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KAI TI ASSET - Portal Manajemen Aset & Fasilitas TI</title>
+    <!-- URL Sanitizer: Otomatis memperbaiki URL dengan spasi seperti /bast aplikasi/222 ke /bast-aplikasi/222 -->
+    <script>
+      (function() {
+        try {
+          var p = window.location.pathname;
+          var decoded = decodeURIComponent(p);
+          if (decoded.includes('bast aplikasi') || decoded.includes('bast barang') || p.includes('%20') || p.includes(' ')) {
+            var sanitized = decoded
+              .replace(/bast\s+aplikasi/gi, 'bast-aplikasi')
+              .replace(/bast\s+barang/gi, 'bast-barang');
+            if (sanitized !== decoded) {
+              window.location.replace(sanitized + window.location.search + window.location.hash);
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Global Error Handler agar tidak blank screen tanpa pesan -->
+    <script>
+      window.addEventListener('error', function(e) {
+        if (!document.getElementById('global-error-banner')) {
+          var b = document.createElement('div');
+          b.id = 'global-error-banner';
+          b.style.cssText = 'position:fixed;top:16px;left:16px;right:16px;background:#fee2e2;border:2px solid #ef4444;color:#991b1b;padding:16px;border-radius:12px;z-index:999999;font-family:sans-serif;box-shadow:0 10px 25px rgba(0,0,0,0.1);';
+          b.innerHTML = '<h4 style="margin:0 0 8px 0;font-weight:bold;font-size:14px;">Kendala Memuat Halaman:</h4><div style="font-size:12px;font-family:monospace;white-space:pre-wrap;">' + (e.message || 'Terjadi kesalahan sistem.') + '</div><div style="margin-top:12px;display:flex;gap:8px;"><button onclick="window.location.reload()" style="padding:6px 12px;background:#b91c1c;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;">Muat Ulang</button><button onclick="window.location.href=\'/bast-aplikasi\'" style="padding:6px 12px;background:#003580;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;">Ke BAST Aplikasi</button></div>';
+          document.body.appendChild(b);
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

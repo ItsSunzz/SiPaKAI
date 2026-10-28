@@ -217,9 +217,10 @@ export const api = {
     return await res.blob();
   },
 
-  async getDocumentPdfBlob(id) {
+  async getDocumentPdfBlob(id, template = null) {
     const token = getToken();
-    const res = await fetch(`${API_BASE_URL}/documents/${id}/pdf?inline=1&_t=${Date.now()}`, {
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/pdf?inline=1${templateParam}&_t=${Date.now()}`, {
       method: 'GET',
       headers: {
         Accept: 'application/pdf',
@@ -233,10 +234,28 @@ export const api = {
     return await res.blob();
   },
 
-  getDocumentPdfUrl(id, inline = true) {
+  getDocumentPdfUrl(id, inline = true, template = null) {
     const token = getToken();
     const inlineParam = inline ? '&inline=1' : '';
-    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}`;
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}${templateParam}`;
+  },
+
+  async uploadPhysicalScan(id, formData) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/physical-scan`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.message || 'Gagal mengunggah berkas scan fisik.');
+    }
+    return json;
   },
 
   // Approvers list

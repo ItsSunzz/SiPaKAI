@@ -24,7 +24,11 @@ import {
   Copy,
   ExternalLink,
   ShieldAlert,
-  X
+  X,
+  ChevronDown,
+  Upload,
+  Info,
+  FileUp
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
@@ -42,6 +46,26 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   // Tab view: 'pdf' (Pratinjau PDF Asli Backend ho02.blade.php) | 'detail' (Rincian & Tanda Tangan)
   const [activeTab, setActiveTab] = useState('pdf');
   const [isIframeLoading, setIsIframeLoading] = useState(true);
+
+  // Active PDF template: 'ho02' (Digital) | 'manual' (Materai & TTD Basah)
+  const [previewTemplate, setPreviewTemplate] = useState('ho02');
+  const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState(false);
+  const downloadDropdownRef = useRef(null);
+
+  // Fitur Tambahan (Opsional): Upload Scan Berkas Fisik Ber-Materai
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [physicalFile, setPhysicalFile] = useState(null);
+  const [physicalFilePreview, setPhysicalFilePreview] = useState(null);
+  const [physicalNotes, setPhysicalNotes] = useState('');
+  const [isUploadingPhysical, setIsUploadingPhysical] = useState(false);
+  const [uploadedPhysicalDoc, setUploadedPhysicalDoc] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`bast_physical_scan_${id}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Password reveal toggle in accounts table
   const [revealedPasswords, setRevealedPasswords] = useState({});
@@ -71,6 +95,24 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
       setSignatureMode('draw');
     }
   }, [user]);
+
+  // Sync template from doc.data?.metode_ttd
+  useEffect(() => {
+    if (doc?.data?.metode_ttd === 'manual') {
+      setPreviewTemplate('manual');
+    }
+  }, [doc]);
+
+  // Click outside listener for download dropdown
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (downloadDropdownRef.current && !downloadDropdownRef.current.contains(event.target)) {
+        setIsDownloadDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const togglePasswordReveal = (idx) => {
     setRevealedPasswords((prev) => ({
@@ -357,13 +399,73 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const keperluan = data.keperluan || 'Akses otorisasi persetujuan operasional harian dinas.';
   const masaAktif = data.masa_aktif || { mulai: '2026-10-18', selesai: '2027-10-18' };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = (template = null) => {
     if (!doc?.id) return;
-    const url = api.getDocumentPdfUrl(doc.id, false);
+    const chosen = template || previewTemplate;
+    const url = api.getDocumentPdfUrl(doc.id, false, chosen);
     window.open(url, '_blank');
+    setIsDownloadDropdownOpen(false);
   };
 
-  const pdfUrl = doc?.id ? api.getDocumentPdfUrl(doc.id) : '';
+  const handleOpenPdfInline = (template = null) => {
+    if (!doc?.id) return;
+    const chosen = template || previewTemplate;
+    const url = api.getDocumentPdfUrl(doc.id, true, chosen);
+    window.open(url, '_blank');
+    setIsDownloadDropdownOpen(false);
+  };
+
+  const handlePhysicalFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhysicalFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => setPhysicalFilePreview(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setPhysicalFilePreview(null);
+    }
+  };
+
+  const handleUploadPhysicalSubmit = async (e) => {
+    e.preventDefault();
+    if (!physicalFile) {
+      alert('Pilih berkas scan fisik terlebih dahulu.');
+      return;
+    }
+    setIsUploadingPhysical(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', physicalFile);
+      formData.append('notes', physicalNotes);
+      try {
+        await api.uploadPhysicalScan(doc.id, formData);
+      } catch (backendErr) {
+        console.warn('API uploadPhysicalScan fallback ke local storage:', backendErr);
+      }
+      const fileData = {
+        name: physicalFile.name,
+        size: (physicalFile.size / 1024).toFixed(1) + ' KB',
+        type: physicalFile.type,
+        notes: physicalNotes,
+        uploaded_at: new Date().toISOString(),
+        preview: physicalFilePreview || null,
+      };
+      localStorage.setItem(`bast_physical_scan_${id}`, JSON.stringify(fileData));
+      setUploadedPhysicalDoc(fileData);
+      setIsUploadModalOpen(false);
+      setSuccessMessage('Berkas scan fisik bermaterai berhasil diunggah dan disimpan ke sistem SIPAKAI!');
+      setPhysicalFile(null);
+      setPhysicalNotes('');
+    } catch (err) {
+      alert(err.message || 'Gagal mengunggah berkas scan.');
+    } finally {
+      setIsUploadingPhysical(false);
+    }
+  };
+
+  const pdfUrl = doc?.id ? api.getDocumentPdfUrl(doc.id, true, previewTemplate) : '';
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 pb-28 select-none">
@@ -399,7 +501,7 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
               onClick={() => setActiveTab('pdf')}
               className={`px-3.5 py-1.5 rounded-lg transition-all ${activeTab === 'pdf' ? 'bg-white text-[#003580] shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900'}`}
             >
-              Pratinjau PDF A4 (ho02.blade.php)
+              Pratinjau PDF A4 ({previewTemplate === 'manual' ? 'ho02_manual' : 'ho02'})
             </button>
             <button
               type="button"
@@ -421,15 +523,93 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-            title="Unduh PDF Resmi dari template backend ho02.blade.php"
-          >
-            <Download className="w-4 h-4 text-sky-400" />
-            <span>Unduh PDF</span>
-          </button>
+          {/* Dropdown / Split Button Unduh Dokumen PDF */}
+          <div className="relative inline-block text-left" ref={downloadDropdownRef}>
+            <div className="inline-flex rounded-xl shadow-xs overflow-hidden border border-[#002760]">
+              <button
+                type="button"
+                onClick={() => handleDownloadPdf(previewTemplate)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#003580] hover:bg-[#092653] text-white text-xs font-bold transition-colors cursor-pointer"
+                title={`Unduh PDF (${previewTemplate === 'manual' ? 'Siap Cetak & Materai' : 'Digital'})`}
+              >
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Unduh PDF ({previewTemplate === 'manual' ? 'Manual' : 'Digital'})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDownloadDropdownOpen((prev) => !prev)}
+                className="px-2 py-2 bg-[#002760] hover:bg-[#001c46] text-white border-l border-white/20 transition-colors cursor-pointer"
+                title="Pilih Opsi Template PDF Lainnya"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isDownloadDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {isDownloadDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2 space-y-1 animate-in fade-in slide-in-from-top-1">
+                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Pilihan Template Unduhan
+                </div>
+
+                {/* Versi Digital */}
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf('ho02')}
+                  className={`w-full text-left p-2.5 rounded-lg flex items-start gap-2.5 transition-colors cursor-pointer ${
+                    previewTemplate === 'ho02' ? 'bg-blue-50 text-blue-950 font-semibold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-[#003580] shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>📄 Unduh PDF Digital</span>
+                      <span className="text-[10px] font-normal px-1.5 py-0.2 bg-blue-100 text-blue-800 rounded font-mono">ho02</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Arsip elektronik lengkap dengan riwayat tanda tangan digital sistem.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Versi Manual */}
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf('manual')}
+                  className={`w-full text-left p-2.5 rounded-lg flex items-start gap-2.5 transition-colors cursor-pointer ${
+                    previewTemplate === 'manual' ? 'bg-orange-50 text-orange-950 font-semibold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <Printer className="w-4 h-4 text-[#EE7623] shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>🖨️ Unduh PDF Siap Cetak</span>
+                      <span className="text-[10px] font-normal px-1.5 py-0.2 bg-orange-100 text-orange-800 rounded font-mono">manual</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Disediakan kotak materai fisik dan kolom tanda tangan basah.
+                    </p>
+                  </div>
+                </button>
+
+                <div className="border-t border-slate-100 pt-1.5 mt-1 flex justify-between px-2 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPdfInline('ho02')}
+                    className="text-[#003580] hover:underline font-semibold"
+                  >
+                    Buka Tab (Digital)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPdfInline('manual')}
+                    className="text-[#EE7623] hover:underline font-semibold"
+                  >
+                    Buka Tab (Manual)
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -514,9 +694,72 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
         </div>
       </div>
 
+      {/* BANNER DOKUMEN TELAH SELESAI DISAHKAN (APPROVED) */}
+      {isApproved && (
+        <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+          <div className="flex items-start gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white shrink-0 shadow-xs">
+              <ShieldCheck className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-emerald-950">
+                  Berita Acara User Aplikasi Telah Disetujui & Sah
+                </h3>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  data.metode_ttd === 'manual'
+                    ? 'bg-orange-100 text-orange-900 border-orange-200'
+                    : 'bg-emerald-200 text-emerald-900 border-emerald-300'
+                }`}>
+                  {data.metode_ttd === 'manual' ? 'Metode Manual (Materai)' : 'Metode Digital Penuh'}
+                </span>
+              </div>
+              <p className="text-xs text-emerald-800 mt-1 max-w-2xl leading-relaxed">
+                {data.metode_ttd === 'manual'
+                  ? 'Approval elektronik telah divalidasi dengan PIN. Untuk melengkapi SOP fisik, silakan unduh versi cetak, tempeli materai fisik dan tanda tangan basah, lalu unggah kembali scan berkasnya ke sistem.'
+                  : 'Dokumen ini telah selesai ditandatangani secara elektronik oleh kedua belah pihak dengan validasi PIN resmi. Hak akses akun telah resmi diserahterimakan.'}
+              </p>
+
+              {uploadedPhysicalDoc && (
+                <div className="mt-2.5 text-[11px] font-medium text-emerald-950 flex flex-wrap items-center gap-2 bg-emerald-100/80 px-3 py-1.5 rounded-xl border border-emerald-300 w-fit">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                  <span>
+                    Berkas Scan Fisik: <strong>{uploadedPhysicalDoc.name}</strong> ({uploadedPhysicalDoc.size})
+                  </span>
+                  <span className="text-[10px] text-emerald-700">
+                    • Diunggah: {new Date(uploadedPhysicalDoc.uploaded_at).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('manual')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+              title="Unduh PDF Siap Cetak (Materai & TTD Basah)"
+            >
+              <Printer className="w-3.5 h-3.5 text-[#EE7623]" />
+              <span>Unduh Siap Cetak (Materai)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsUploadModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors shadow-2xs cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{uploadedPhysicalDoc ? 'Perbarui Scan Berkas' : 'Unggah Berkas Fisik Ber-Materai'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ACTION PANEL: TANDA TANGAN PIHAK PENERIMA (JIKA MENUNGGU TTD) */}
       {isPending && (
-        <div className="bg-white rounded-2xl border-2 border-orange-300 shadow-md overflow-hidden animate-in fade-in">
+        <div className="bg-white rounded-2xl border-2 border-orange-300 shadow-md overflow-hidden animate-in fade-in space-y-0">
           <div className="bg-[#003580] text-white p-4 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#EE7623] flex items-center justify-center text-white">
@@ -535,6 +778,26 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
           </div>
 
           <form onSubmit={handleSignSecondParty} className="p-6 space-y-4 text-xs">
+            {/* Alert/Banner Info Ringkas untuk Dokumen Manual */}
+            {data.metode_ttd === 'manual' && (
+              <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-amber-900 flex items-start gap-3 shadow-2xs">
+                <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-amber-950">
+                      Informasi Serah Terima: Format Tanda Tangan Manual
+                    </h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-900 border border-amber-300">
+                      Materai & TTD Basah
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                    Dokumen ini berformat <strong>Tanda Tangan Manual</strong>. Setelah Anda memasukkan PIN persetujuan di bawah ini untuk mencatat sah approval elektronik pada sistem, silakan unduh versi cetak (template manual) untuk ditempeli materai fisik dan ditandatangani basah.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Input PIN */}
             <div className="bg-orange-50/80 border border-orange-200 rounded-xl p-4 space-y-2">
               <div className="flex items-center gap-2">
@@ -614,30 +877,73 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
 
       {/* MAIN VIEW AREA */}
       {activeTab === 'pdf' ? (
-        /* LEMBAR PRATINJAU PDF ASLI DARI BACKEND ho02.blade.php */
+        /* LEMBAR PRATINJAU PDF ASLI DARI BACKEND */
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col h-[85vh] relative">
-          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-[#003580]" />
-              <span>Pratinjau Dokumen PDF Resmi Backend (Template: resources/views/pdf/ho02.blade.php)</span>
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 text-xs font-semibold text-slate-600 shrink-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#003580]" />
+                <span className="font-bold text-slate-800">Template Pratinjau:</span>
+              </div>
+
+              {/* Segmented Control Switcher */}
+              <div className="flex bg-slate-200 p-1 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewTemplate('ho02');
+                    setIsIframeLoading(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    previewTemplate === 'ho02'
+                      ? 'bg-white text-[#003580] shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#003580]" />
+                  <span>Versi Digital (ho02.blade.php)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewTemplate('manual');
+                    setIsIframeLoading(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    previewTemplate === 'manual'
+                      ? 'bg-white text-[#EE7623] shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Printer className="w-3.5 h-3.5 text-[#EE7623]" />
+                  <span>Versi Siap Cetak (ho02_manual.blade.php)</span>
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              className="text-[#003580] hover:underline flex items-center gap-1 font-bold cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" /> Buka / Simpan File PDF Asli
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleDownloadPdf(previewTemplate)}
+                className="text-[#003580] hover:underline flex items-center gap-1 font-bold cursor-pointer text-xs"
+              >
+                <Download className="w-3.5 h-3.5" /> Buka / Simpan File PDF ({previewTemplate === 'manual' ? 'Manual' : 'Digital'})
+              </button>
+            </div>
           </div>
           <div className="flex-1 relative w-full h-full bg-slate-100 flex items-center justify-center">
             {isIframeLoading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 z-10 text-slate-500">
                 <Loader2 className="w-7 h-7 animate-spin text-[#003580]" />
-                <span className="text-xs font-medium">Memuat pratinjau lembar PDF resmi KAI...</span>
+                <span className="text-xs font-medium">
+                  Memuat lembar PDF template {previewTemplate === 'manual' ? 'Manual (ho02_manual.blade.php)' : 'Digital (ho02.blade.php)'}...
+                </span>
               </div>
             )}
             {pdfUrl ? (
               <iframe
+                key={previewTemplate}
                 src={pdfUrl}
                 title="BAST User Aplikasi PDF Sheet"
                 onLoad={() => setIsIframeLoading(false)}
@@ -1009,6 +1315,91 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
                 <div className="flex justify-between"><span className="text-slate-400">Custodian:</span> <span>{penerima.custodian}</span></div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL UNGGAH BERKAS FISIK BER-MATERAI (FITUR TAMBAHAN OPSIONAL) */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-[#003580] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#EE7623] flex items-center justify-center text-white">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Unggah Berkas Fisik Ber-Materai</h3>
+                  <p className="text-[11px] text-blue-100">Simpan scan dokumen bermaterai & tanda tangan basah</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsUploadModalOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadPhysicalSubmit} className="p-6 space-y-4 text-xs">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-[11px] leading-relaxed">
+                ℹ️ Berkas ini berfungsi sebagai arsip otentik fisik pendamping log digital. Pastikan materai dan tanda tangan basah penerima terlihat jelas.
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">
+                  Pilih Berkas Scan (PDF / JPG / PNG) *
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,image/png,image/jpeg,image/jpg"
+                  onChange={handlePhysicalFileChange}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#003580] file:text-white hover:file:bg-[#002760] cursor-pointer border border-slate-200 rounded-xl p-2 bg-slate-50"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Maksimal berkas 10 MB.
+                </span>
+              </div>
+
+              {physicalFilePreview && (
+                <div className="border border-slate-200 rounded-xl p-2 bg-slate-50 text-center">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-1">Pratinjau Gambar Scan:</span>
+                  <img src={physicalFilePreview} alt="Scan preview" className="max-h-48 mx-auto rounded border border-slate-200 shadow-2xs object-contain" />
+                </div>
+              )}
+
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">
+                  Catatan Penyimpanan Berkas Fisik (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={physicalNotes}
+                  onChange={(e) => setPhysicalNotes(e.target.value)}
+                  placeholder="Contoh: Dokumen asli tersimpan pada Odner BAST TI Daop 6 Yogyakarta..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-[#003580] outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!physicalFile || isUploadingPhysical}
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#003580] hover:bg-[#002760] disabled:opacity-50 rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                >
+                  {isUploadingPhysical ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span>Simpan Berkas Fisik</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

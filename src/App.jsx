@@ -33,6 +33,7 @@ const formatJabatan = (jabatan) => {
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthChecking, setIsAuthChecking] = useState(true)
   const [userProfile, setUserProfile] = useState(null)
   const [documents, setDocuments] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -119,7 +120,10 @@ export default function App() {
           setToken(null);
           setIsAuthenticated(false);
         }
+      } else {
+        setIsAuthenticated(false);
       }
+      setIsAuthChecking(false);
     };
     initAuth();
   }, []);
@@ -223,6 +227,15 @@ export default function App() {
     }
   }
 
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center font-sans">
+        <div className="w-10 h-10 border-4 border-[#0b2046]/20 border-t-[#0b2046] rounded-full animate-spin"></div>
+        <p className="mt-4 text-xs font-semibold text-slate-500">Memeriksa sesi login KAI TI ASET...</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} onGuestBook={() => alert('Buku Tamu belum diimplementasi')} />
   }
@@ -288,6 +301,8 @@ export default function App() {
           <Route path="dsp03" element={<PenghapusanListPage user={userProfile} />} />
           <Route path="dsp03/create" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="dsp03/:id" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          
+          {/* BAST Barang (HO-01) */}
           <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast-barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast-barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
@@ -296,6 +311,17 @@ export default function App() {
           <Route path="bast/barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast/barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast/barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast/barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+
+          {/* Alias pengetikan dengan spasi untuk BAST Barang */}
+          <Route path="bast barang" element={<BastBarangListPage user={userProfile} />} />
+          <Route path="bast%20barang" element={<BastBarangListPage user={userProfile} />} />
+          <Route path="bast barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast%20barang/create" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast%20barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+
+          {/* BAST Aplikasi (HO-02) */}
           <Route path="bast-aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
           <Route path="bast-aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast-aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
@@ -305,6 +331,18 @@ export default function App() {
           <Route path="bast/aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast/aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast/aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast/aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+
+          {/* Alias pengetikan dengan spasi untuk BAST Aplikasi */}
+          <Route path="bast aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
+          <Route path="bast%20aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
+          <Route path="bast aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast%20aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast%20aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="bast%20aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+
           <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>
