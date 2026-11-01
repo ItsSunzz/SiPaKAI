@@ -43,6 +43,34 @@ export const fallbackDocuments = [
     status: 'in_review',
     status_label: 'Menunggu Disposisi VP',
   },
+  {
+    id: 101,
+    number: 'BA-PMS/TI/DAOP1/10-2026/0014',
+    inventory_code: 'Batch: 12 Unit Server & Storage Rusak Total',
+    type: 'dsp02',
+    category_label: 'Berita Acara Pemusnahan (DSP-02)',
+    category_type: 'pemusnahan',
+    requester_name: 'Ahmad Fauzi Setiawan',
+    requester_unit: 'Spv Operasional Infrastruktur TI',
+    date: '21 Okt 2026',
+    book_value: 'Nilai Scrap Rp 0',
+    status: 'approved',
+    status_label: 'Disahkan Penuh (Sah TTE)',
+  },
+  {
+    id: 201,
+    number: 'FR.SM/TI/011.002/10-2026/0012',
+    inventory_code: 'User SAP & Sirsak',
+    type: 'ho02',
+    category_label: 'BAST User Aplikasi (HO-02)',
+    category_type: 'bast',
+    requester_name: 'Ahmad Fauzi Setiawan',
+    requester_unit: 'Spv Operasional Infrastruktur TI',
+    date: '18 Okt 2026',
+    book_value: 'Hak Akses Sistem',
+    status: 'pending',
+    status_label: 'Menunggu Tanda Tangan Penerima',
+  },
 ]
 
 export function getToken() {
@@ -136,6 +164,29 @@ export const api = {
     })
   },
 
+  async updateDocument(id, payload) {
+    try {
+      return await request(`/documents/${id}`, {
+        method: 'PUT',
+        body: payload,
+      })
+    } catch (err) {
+      if (err.status === 405 || err.status === 404) {
+        return await request(`/documents/${id}`, {
+          method: 'POST',
+          body: { ...payload, _method: 'PUT' },
+        })
+      }
+      throw err
+    }
+  },
+
+  async deleteDocument(id) {
+    return request(`/documents/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
   async actionDocument(id, { action, notes = '', next_approver_id = null, pin = null }) {
     return request(`/documents/${id}/action`, {
       method: 'POST',
@@ -148,19 +199,69 @@ export const api = {
     })
   },
 
-  getDocumentPdfUrl(id) {
-    const token = getToken()
-    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}`
+  async previewPdf(payload) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/documents/preview-pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/pdf',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Gagal memuat pratinjau PDF dari server.');
+    }
+    return await res.blob();
+  },
+
+  async getDocumentPdfBlob(id, template = null) {
+    const token = getToken();
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/pdf?inline=1${templateParam}&_t=${Date.now()}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Gagal memuat PDF dokumen resmi dari server.');
+    }
+    return await res.blob();
+  },
+
+  getDocumentPdfUrl(id, inline = true, template = null) {
+    const token = getToken();
+    const inlineParam = inline ? '&inline=1' : '';
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}${templateParam}`;
+  },
+
+  async uploadPhysicalScan(id, formData) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/physical-scan`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.message || 'Gagal mengunggah berkas scan fisik.');
+    }
+    return json;
   },
 
   // Approvers list
-  async getApprovers() {
-    return request('/approvers')
-  },
-
-  // Profile & Digital Signature
-  async getProfile() {
-    return request('/profile')
+  async getApprovers(params = '') {
+    const q = params ? (params.startsWith('?') ? params : '?' + params) : '';
+    return request('/approvers' + q);
   },
 
   async updateProfile(data) {
@@ -202,6 +303,61 @@ export const api = {
 
   async deleteSignature() {
     return request('/profile/signature', {
+      method: 'DELETE',
+    })
+  },
+
+  // Master Data Aset TI
+  async getAssets(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/assets${query ? `?${query}` : ''}`)
+  },
+
+  async getAsset(id) {
+    return request(`/assets/${id}`)
+  },
+
+  // Master Data Jabatan & Posisi
+  async getPositions() {
+    return request('/positions')
+  },
+
+  // Dokumen: Submit / Pengesahan
+  async submitDocument(id, payload = {}) {
+    return request(`/documents/${id}/submit`, {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
+  // BAST: Tanda Tangan Pihak Kedua
+  async signDocument(id, signaturePin) {
+    return request(`/documents/${id}/sign`, {
+      method: 'POST',
+      body: { signature_pin: signaturePin },
+    })
+  },
+
+  // Notifikasi
+  async getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/notifications${query ? `?${query}` : ''}`)
+  },
+
+  async markNotificationAsRead(id) {
+    return request(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    })
+  },
+
+  async markAllNotificationsAsRead() {
+    return request('/notifications/read-all', {
+      method: 'POST',
+    })
+  },
+
+  async deleteNotification(id) {
+    return request(`/notifications/${id}`, {
       method: 'DELETE',
     })
   },

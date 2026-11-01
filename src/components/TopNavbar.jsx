@@ -1,4 +1,5 @@
-import { Bell, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
+import NotificationDropdown from './NotificationDropdown'
 
 export default function TopNavbar({ currentRole, onLogout, user }) {
   return (
@@ -22,17 +23,8 @@ export default function TopNavbar({ currentRole, onLogout, user }) {
 
       {/* Right User Bar */}
       <div className="flex items-center gap-5">
-        {/* Notification Bell */}
-        <button
-          type="button"
-          aria-label="Notifikasi"
-          className="relative p-2 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="absolute 0 top-1 right-1 w-4 h-4 bg-orange-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-            4
-          </span>
-        </button>
+        {/* Notification Bell Dropdown */}
+        <NotificationDropdown />
 
         {/* User Profile */}
         <div className="flex items-center gap-3 pl-2 border-l border-slate-200">
