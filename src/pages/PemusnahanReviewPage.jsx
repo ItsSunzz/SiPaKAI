@@ -26,6 +26,7 @@ import {
   Upload,
   Image as ImageIcon,
   PenTool,
+  Edit3,
   X
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
@@ -171,9 +172,11 @@ export default function PemusnahanReviewPage({ user }) {
     );
   }
 
-  const isPending = doc.status === 'in_review';
-  const isApproved = doc.status === 'approved';
-  const isRejected = doc.status === 'rejected';
+  const rawStatus = (doc.status || '').toLowerCase();
+  const isDraft = rawStatus === 'draft' || rawStatus === 'draf';
+  const isPending = !isDraft && (rawStatus === 'in_review' || rawStatus === 'pending');
+  const isApproved = !isDraft && rawStatus === 'approved';
+  const isRejected = !isDraft && rawStatus === 'rejected';
 
   // Role check
   const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
@@ -374,6 +377,18 @@ export default function PemusnahanReviewPage({ user }) {
             <span>Kembali ke Daftar</span>
           </button>
 
+          {isDraft && (
+            <button
+              type="button"
+              id="btn-top-edit-draft-pmh"
+              onClick={() => navigate(`/pemusnahan/${doc.id}/edit`)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>Edit Draf</span>
+            </button>
+          )}
+
           {(isApproved || isPending) && (
             <button
               onClick={handleDownloadPdf}
@@ -430,20 +445,22 @@ export default function PemusnahanReviewPage({ user }) {
           <div className="text-right hidden sm:block">
             <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Status Dokumen Saat Ini</span>
             <span className="text-xs font-bold text-slate-800">
-              {isApproved ? 'Telah Disetujui Penuh & Sah' : isRejected ? 'Ditolak / Perlu Revisi' : `Sedang di ${sequentialSteps[currentActiveStep - 1]?.title}`}
+              {isDraft ? 'Dokumen Berstatus Draf (Belum Diajukan)' : isApproved ? 'Telah Disetujui Penuh & Sah' : isRejected ? 'Ditolak / Perlu Revisi' : `Sedang di ${sequentialSteps[currentActiveStep - 1]?.title}`}
             </span>
           </div>
 
           <span className={`px-3 py-1.5 rounded-full text-xs font-bold border inline-flex items-center gap-2 ${
+            isDraft ? 'bg-amber-50 text-amber-800 border-amber-200' :
             isPending ? 'bg-orange-50 text-orange-700 border-orange-200' :
             isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
             'bg-rose-50 text-rose-700 border-rose-200'
           }`}>
             <span className={`w-2 h-2 rounded-full ${
+              isDraft ? 'bg-amber-500' :
               isPending ? 'bg-orange-500 animate-pulse' :
               isApproved ? 'bg-emerald-500' : 'bg-rose-500'
             }`}></span>
-            <span>{doc.status_label || (isPending ? `Tahap ${currentActiveStep}: Menunggu Disposisi` : isApproved ? 'Selesai Disetujui' : 'Ditolak')}</span>
+            <span>{isDraft ? 'Draf Pengajuan' : (doc.status_label || (isPending ? `Tahap ${currentActiveStep}: Menunggu Disposisi` : isApproved ? 'Selesai Disetujui' : 'Ditolak'))}</span>
           </span>
         </div>
       </div>
@@ -703,7 +720,26 @@ export default function PemusnahanReviewPage({ user }) {
             </div>
 
             <div className="p-5">
-              {isPending ? (
+              {isDraft ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 text-amber-900">
+                  <div className="flex items-center gap-2 font-bold text-xs">
+                    <FileText className="w-4 h-4 text-amber-600" />
+                    <span>Dokumen Berstatus Draf</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Formulir ini masih tersimpan sebagai draf dan belum diajukan ke Verifikator. Anda dapat mengubah isi formulir dan mengajukannya kapan saja.
+                  </p>
+                  <button
+                    type="button"
+                    id="btn-sidebar-edit-draft-pmh"
+                    onClick={() => navigate(`/pemusnahan/${doc.id}/edit`)}
+                    className="w-full py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    <span>Lanjutkan / Edit Draf</span>
+                  </button>
+                </div>
+              ) : isPending ? (
                 canTakeAction ? (
                   <div className="space-y-4">
                     {/* Notes Textarea */}
