@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Calendar, 
   User, 
@@ -19,12 +19,20 @@ import {
   Users,
   ArrowRight,
   GitBranch,
-  Lock
+  Lock,
+  Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function PemusnahanFormPage({ user }) {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const isEditMode = Boolean(id);
+
+  const [isLoadingDoc, setIsLoadingDoc] = useState(isEditMode);
+  const [isLockedNonDraft, setIsLockedNonDraft] = useState(false);
+  const [existingDoc, setExistingDoc] = useState(null);
+
   const [assets, setAssets] = useState([
     { id: 1, nama: 'Server Dell PowerEdge R740', jenis: 'Fisik (Hardware)', sn: 'SN-98214-KAI-SRV', alasan: 'Kerusakan fatal motherboard & melewati batas usia depresiasi 5 tahun' },
     { id: 2, nama: 'Cisco Catalyst 3850 48-Port PoE', jenis: 'Jaringan (Network)', sn: 'MAC-7721-CC-081', alasan: 'Port modul korsleting sambaran petir, tidak dapat direparasi' }
@@ -39,6 +47,8 @@ export default function PemusnahanFormPage({ user }) {
   const [verifikator3, setVerifikator3] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(null);
 
@@ -51,28 +61,30 @@ export default function PemusnahanFormPage({ user }) {
         const list = Array.isArray(res) ? res : (res.data || []);
         setApprovers(list);
 
-        // Smart auto-selection for the 3 roles based on hierarchy
-        const asmen = list.find(u => {
-          const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
-          return jab.includes('ASMEN') || jab.includes('ASISTEN');
-        });
-        const manager = list.find(u => {
-          const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
-          return jab.includes('MANAGER') && (!asmen || u.id !== asmen.id);
-        });
-        const vpOrKdaop = list.find(u => {
-          const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
-          return (jab.includes('VP') || jab.includes('KDAOP') || jab.includes('PRESIDENT')) &&
-            (!asmen || u.id !== asmen.id) && (!manager || u.id !== manager.id);
-        });
+        // Smart auto-selection for the 3 roles based on hierarchy (only in create mode)
+        if (!isEditMode) {
+          const asmen = list.find(u => {
+            const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
+            return jab.includes('ASMEN') || jab.includes('ASISTEN');
+          });
+          const manager = list.find(u => {
+            const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
+            return jab.includes('MANAGER') && (!asmen || u.id !== asmen.id);
+          });
+          const vpOrKdaop = list.find(u => {
+            const jab = (typeof u.jabatan === 'object' ? u.jabatan?.nama || u.jabatan?.kode : u.jabatan || '').toUpperCase();
+            return (jab.includes('VP') || jab.includes('KDAOP') || jab.includes('PRESIDENT')) &&
+              (!asmen || u.id !== asmen.id) && (!manager || u.id !== manager.id);
+          });
 
-        const v1 = asmen?.id || list[0]?.id || '';
-        const v2 = manager?.id || list.find(u => u.id !== v1)?.id || list[1]?.id || '';
-        const v3 = vpOrKdaop?.id || list.find(u => u.id !== v1 && u.id !== v2)?.id || list[2]?.id || '';
+          const v1 = asmen?.id || list[0]?.id || '';
+          const v2 = manager?.id || list.find(u => u.id !== v1)?.id || list[1]?.id || '';
+          const v3 = vpOrKdaop?.id || list.find(u => u.id !== v1 && u.id !== v2)?.id || list[2]?.id || '';
 
-        if (v1) setVerifikator1(String(v1));
-        if (v2) setVerifikator2(String(v2));
-        if (v3) setVerifikator3(String(v3));
+          if (v1) setVerifikator1(String(v1));
+          if (v2) setVerifikator2(String(v2));
+          if (v3) setVerifikator3(String(v3));
+        }
       } catch (err) {
         console.error('Failed to load approvers:', err);
       } finally {
@@ -80,7 +92,57 @@ export default function PemusnahanFormPage({ user }) {
       }
     };
     fetchApprovers();
-  }, [user]);
+  }, [user, isEditMode]);
+
+  // Load draft document when in Edit Mode
+  useEffect(() => {
+    if (!id) return;
+    async function loadDraftDoc() {
+      setIsLoadingDoc(true);
+      try {
+        const res = await api.getDocument(id);
+        const doc = res?.document || res?.data || res;
+        if (doc) {
+          setExistingDoc(doc);
+          const d = doc.data || {};
+          const status = (doc.status || '').toLowerCase();
+          if (status && status !== 'draft' && status !== 'draf') {
+            setIsLockedNonDraft(true);
+          }
+
+          if (d.nomor_referensi || doc.nomor || doc.number) {
+            setReference(d.nomor_referensi || doc.nomor || doc.number || '');
+          }
+          if (d.verifikator_1_id || doc.approver_id) {
+            setVerifikator1(String(d.verifikator_1_id || doc.approver_id));
+          }
+          if (d.verifikator_2_id) {
+            setVerifikator2(String(d.verifikator_2_id));
+          }
+          if (d.verifikator_3_id) {
+            setVerifikator3(String(d.verifikator_3_id));
+          }
+
+          const docItems = doc.items || d.items;
+          if (Array.isArray(docItems) && docItems.length > 0) {
+            setAssets(docItems.map((it, idx) => ({
+              id: it.id || idx + 1,
+              nama: it.nama_aset || it.nama || '',
+              jenis: it.jenis_aset ? (it.jenis_aset === 'Jaringan' ? 'Jaringan (Network)' : it.jenis_aset === 'Informasi' ? 'Lisensi/Software' : 'Fisik (Hardware)') : (it.jenis || 'Fisik (Hardware)'),
+              sn: it.id_aset || it.sn || it.serial_number || '',
+              alasan: it.alasan_pemusnahan || it.alasan || ''
+            })));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load draft document for edit:', err);
+        setSubmitError('Gagal memuat dokumen draf: ' + (err.message || 'Dokumen tidak ditemukan'));
+      } finally {
+        setIsLoadingDoc(false);
+      }
+    }
+    loadDraftDoc();
+  }, [id]);
 
   const getApproverDetail = (id) => {
     if (!id) return null;
@@ -98,7 +160,7 @@ export default function PemusnahanFormPage({ user }) {
   };
 
   const handleAddAsset = () => {
-    setAssets([...assets, { id: Date.now(), nama: '', jenis: '', sn: '', alasan: '' }]);
+    setAssets([...assets, { id: Date.now(), nama: '', jenis: 'Fisik (Hardware)', sn: '', alasan: '' }]);
   };
 
   const handleRemoveAsset = (id) => {
@@ -109,13 +171,17 @@ export default function PemusnahanFormPage({ user }) {
     setAssets(assets.filter(a => a.id !== id));
   };
 
+  const hasDuplicateVerifiers = (verifikator1 && verifikator2 && verifikator1 === verifikator2) ||
+    (verifikator1 && verifikator3 && verifikator1 === verifikator3) ||
+    (verifikator2 && verifikator3 && verifikator2 === verifikator3);
+
   const handleSubmit = async (submitNow) => {
     setSubmitError(null);
     setSubmitSuccess(null);
 
     // Validate assets
     const validAssets = assets.filter(a => a.nama && a.nama.trim() !== '');
-    if (validAssets.length === 0) {
+    if (submitNow && validAssets.length === 0) {
       setSubmitError('Harap isi minimal 1 data perangkat aset pada Bagian 2.');
       window.scrollTo({ top: 300, behavior: 'smooth' });
       return;
@@ -133,7 +199,11 @@ export default function PemusnahanFormPage({ user }) {
       return;
     }
 
-    setIsSubmitting(true);
+    if (submitNow) {
+      setIsSubmitting(true);
+    } else {
+      setIsSavingDraft(true);
+    }
 
     try {
       const v1Num = verifikator1 ? Number(verifikator1) : null;
@@ -143,51 +213,82 @@ export default function PemusnahanFormPage({ user }) {
       // Build chain array
       const chain = [v1Num, v2Num, v3Num].filter(Boolean);
 
+      const itemsToSave = (validAssets.length > 0 ? validAssets : assets).map((a, idx) => ({
+        nama_aset: (a.nama || '').trim(),
+        jenis_aset: a.jenis ? (a.jenis.includes('Jaringan') ? 'Jaringan' : a.jenis.includes('Lisensi') ? 'Informasi' : 'Fisik') : 'Fisik',
+        id_aset: a.sn?.trim() || `AST-KAI-${Date.now().toString().slice(-4)}-${idx + 1}`,
+        alasan_pemusnahan: a.alasan?.trim() || 'Kerusakan fatal & melewati batas usia pemakaian teknis',
+      }));
+
       const payload = {
         type: 'dsp01',
         submit: submitNow,
-        approver_id: submitNow ? v1Num : undefined,
+        status: submitNow ? 'in_review' : 'draft',
+        approver_id: submitNow ? v1Num : (v1Num || undefined),
         data: {
-          tanggal_permohonan: new Date().toISOString().split('T')[0],
-          nama_pemohon: user?.name,
-          nip_pemohon: user?.nip,
-          unit_kerja: user?.location || 'Unit Kantor Pusat',
+          tanggal_permohonan: existingDoc?.data?.tanggal_permohonan || new Date().toISOString().split('T')[0],
+          nama_pemohon: existingDoc?.data?.nama_pemohon || user?.name,
+          nip_pemohon: existingDoc?.data?.nip_pemohon || user?.nip,
+          unit_kerja: existingDoc?.data?.unit_kerja || user?.location || 'Unit Kantor Pusat',
           nomor_referensi: reference || undefined,
           verifikator_1_id: v1Num,
           verifikator_2_id: v2Num,
           verifikator_3_id: v3Num,
           approval_chain: chain,
         },
-        items: validAssets.map((a, idx) => ({
-          nama_aset: a.nama.trim(),
-          jenis_aset: a.jenis ? (a.jenis.includes('Jaringan') ? 'Jaringan' : a.jenis.includes('Lisensi') ? 'Informasi' : 'Fisik') : 'Fisik',
-          id_aset: a.sn?.trim() || `AST-KAI-${Date.now().toString().slice(-4)}-${idx + 1}`,
-          alasan_pemusnahan: a.alasan?.trim() || 'Kerusakan fatal & melewati batas usia pemakaian teknis',
-        })),
+        items: itemsToSave,
       };
 
-      const res = await api.createDocument(payload);
-      setSubmitSuccess(res.message || 'Permohonan pemusnahan aset berhasil disimpan dan dialirkan ke verifikator!');
+      let resDoc = null;
+      if (isEditMode) {
+        resDoc = await api.updateDocument(id, payload);
+        if (submitNow && v1Num) {
+          await api.submitDocument(id, { approver_id: v1Num }).catch(() => null);
+        }
+      } else {
+        resDoc = await api.createDocument(payload);
+      }
 
-      setTimeout(() => {
-        navigate('/pemusnahan');
-      }, 1500);
+      const createdDocId = resDoc?.document?.id || resDoc?.id || id;
+
+      if (!submitNow) {
+        setDraftSavedAt(new Date());
+        setSubmitSuccess('Draf permohonan pemusnahan aset (DSP-01) berhasil disimpan.');
+        setTimeout(() => {
+          navigate(createdDocId ? `/pemusnahan/${createdDocId}` : '/pemusnahan');
+        }, 1200);
+      } else {
+        setSubmitSuccess(isEditMode 
+          ? 'Permohonan pemusnahan aset berhasil diperbarui dan dialirkan ke verifikator!' 
+          : 'Permohonan pemusnahan aset berhasil disimpan dan dialirkan ke verifikator!');
+        setTimeout(() => {
+          navigate(createdDocId ? `/pemusnahan/${createdDocId}` : '/pemusnahan');
+        }, 1500);
+      }
     } catch (err) {
       setSubmitError(err.message || 'Terjadi kesalahan saat memproses permohonan.');
     } finally {
       setIsSubmitting(false);
+      setIsSavingDraft(false);
     }
   };
 
-  const today = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
-
-  const hasDuplicateVerifiers = (verifikator1 && verifikator2 && verifikator1 === verifikator2) ||
-    (verifikator1 && verifikator3 && verifikator1 === verifikator3) ||
-    (verifikator2 && verifikator3 && verifikator2 === verifikator3);
+  const today = existingDoc?.data?.tanggal_permohonan
+    ? new Date(existingDoc.data.tanggal_permohonan).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
   const v1Data = getApproverDetail(verifikator1);
   const v2Data = getApproverDetail(verifikator2);
   const v3Data = getApproverDetail(verifikator3);
+
+  if (isLoadingDoc) {
+    return (
+      <div className="w-full max-w-[1050px] mx-auto py-24 flex flex-col items-center justify-center gap-3 text-slate-500">
+        <Loader2 className="w-8 h-8 animate-spin text-[#f05a22]" />
+        <span className="text-sm font-semibold">Memuat formulir draf permohonan pemusnahan...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-[1050px] mx-auto pb-12">
@@ -195,7 +296,7 @@ export default function PemusnahanFormPage({ user }) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-3xl font-extrabold text-[#0b2046] tracking-tight mb-1">
-            Formulir Permohonan Pemusnahan Aset
+            {isEditMode ? 'Edit Formulir Permohonan Pemusnahan Aset' : 'Formulir Permohonan Pemusnahan Aset'}
           </h1>
           <p className="text-sm text-slate-500">
             Formulir ini digunakan oleh unit kerja untuk mengajukan permohonan disposisi/pemusnahan aset TI PT Kereta Api Indonesia (Persero).
@@ -213,10 +314,12 @@ export default function PemusnahanFormPage({ user }) {
       <div className="bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-4 mb-6 shadow-xs">
         <div className="flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full bg-orange-600 animate-pulse"></span>
-          <span className="text-sm font-bold text-[#0b2046]">Mode Aktif: Formulir Permohonan Pemusnahan Aset TI [DSP - 01]</span>
+          <span className="text-sm font-bold text-[#0b2046]">
+            Mode Aktif: {isEditMode ? 'Sunting Draf Permohonan Pemusnahan Aset TI [DSP - 01]' : 'Formulir Permohonan Pemusnahan Aset TI [DSP - 01]'}
+          </span>
         </div>
         <div className="px-2.5 py-1 bg-blue-100 text-[#0b2046] text-xs font-extrabold rounded tracking-wide w-fit">
-          TAHAP PERMOHONAN BERJENJANG
+          {isEditMode ? 'MODE SUNTSING DRAF' : 'TAHAP PERMOHONAN BERJENJANG'}
         </div>
         <div className="md:ml-auto flex items-center gap-2 text-xs text-slate-600">
           <Info className="w-4 h-4 text-[#f05a22] shrink-0" />
@@ -224,7 +327,36 @@ export default function PemusnahanFormPage({ user }) {
         </div>
       </div>
 
+      {/* Alert if document is locked non-draft */}
+      {isLockedNonDraft && (
+        <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-sm animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold">Dokumen Sudah Bukan Berstatus Draf</span>
+              <p className="text-xs text-amber-800 mt-0.5">Dokumen ini telah diajukan atau sedang diproses verifikasi dalam sistem persetujuan, sehingga tidak dapat disunting kembali.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/pemusnahan/${id}`)}
+            className="px-3.5 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shrink-0 transition-colors"
+          >
+            Lihat Status
+          </button>
+        </div>
+      )}
+
       {/* Notifications */}
+      {draftSavedAt && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Draf terakhir berhasil disimpan pada: <strong>{draftSavedAt.toLocaleTimeString('id-ID')}</strong>. Anda dapat keluar dan melanjutkan pengisian kapan saja.</span>
+          </div>
+        </div>
+      )}
+
       {submitError && (
         <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-center gap-3 text-sm animate-in fade-in">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -261,7 +393,7 @@ export default function PemusnahanFormPage({ user }) {
               <label className="block text-xs font-bold text-slate-700 mb-2">Nama & NIP Pemohon</label>
               <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-[#0b2046]">
                 <User className="w-4 h-4 text-slate-400" />
-                {user?.name} — {user?.nip}
+                {existingDoc?.data?.nama_pemohon || user?.name} — {existingDoc?.data?.nip_pemohon || user?.nip}
               </div>
               <p className="text-[10px] text-slate-400 mt-1">Jabatan: {user?.roleLabel || 'Staff Pengusul'}</p>
             </div>
@@ -269,7 +401,7 @@ export default function PemusnahanFormPage({ user }) {
               <label className="block text-xs font-bold text-slate-700 mb-2">Unit Kerja Pengusul</label>
               <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
                 <Building className="w-4 h-4 text-slate-400" />
-                {user?.location || 'Unit Kantor Pusat'}
+                {existingDoc?.data?.unit_kerja || user?.location || 'Unit Kantor Pusat'}
               </div>
               <p className="text-[10px] text-slate-400 mt-1">Aset tercatat dalam buku inventaris unit terkait</p>
             </div>
@@ -283,9 +415,10 @@ export default function PemusnahanFormPage({ user }) {
                 <input 
                   type="text" 
                   value={reference}
+                  disabled={isLockedNonDraft}
                   onChange={(e) => setReference(e.target.value)}
                   placeholder="Contoh: ND.TI/PUSAT/X/2026/0122 — Permohonan Afkir Server & Switch"
-                  className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#f05a22]"
+                  className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
                 />
               </div>
               <p className="text-[10px] text-slate-400 mt-1">Sertakan nomor arsip digital e-Office KAI untuk validasi cepat oleh verifikator aset.</p>
@@ -302,8 +435,9 @@ export default function PemusnahanFormPage({ user }) {
             </div>
             <button 
               type="button"
+              disabled={isLockedNonDraft}
               onClick={handleAddAsset}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-[#f05a22] border border-orange-200 hover:bg-orange-100 text-xs font-bold rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-[#f05a22] border border-orange-200 hover:bg-orange-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
             >
               <Plus className="w-4 h-4" /> Tambah Aset
             </button>
@@ -330,25 +464,27 @@ export default function PemusnahanFormPage({ user }) {
                     <td className="px-5 py-3.5">
                       <input 
                         type="text" 
+                        disabled={isLockedNonDraft}
                         value={asset.nama} 
                         onChange={(e) => {
                           const newAssets = [...assets];
                           newAssets[index].nama = e.target.value;
                           setAssets(newAssets);
                         }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] font-semibold text-slate-800"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
                         placeholder="Contoh: Server HP ProLiant DL380"
                       />
                     </td>
                     <td className="px-5 py-3.5">
                       <select 
+                        disabled={isLockedNonDraft}
                         value={asset.jenis} 
                         onChange={(e) => {
                           const newAssets = [...assets];
                           newAssets[index].jenis = e.target.value;
                           setAssets(newAssets);
                         }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] text-slate-700"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] text-slate-700 disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="Fisik (Hardware)">Fisik (Hardware)</option>
                         <option value="Jaringan (Network)">Jaringan (Network)</option>
@@ -358,34 +494,37 @@ export default function PemusnahanFormPage({ user }) {
                     <td className="px-5 py-3.5">
                       <input 
                         type="text" 
+                        disabled={isLockedNonDraft}
                         value={asset.sn} 
                         onChange={(e) => {
                           const newAssets = [...assets];
                           newAssets[index].sn = e.target.value;
                           setAssets(newAssets);
                         }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:border-[#f05a22]"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
                         placeholder="SN-12345 / AST-KAI-01"
                       />
                     </td>
                     <td className="px-5 py-3.5">
                       <input 
                         type="text" 
+                        disabled={isLockedNonDraft}
                         value={asset.alasan} 
                         onChange={(e) => {
                           const newAssets = [...assets];
                           newAssets[index].alasan = e.target.value;
                           setAssets(newAssets);
                         }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22]"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
                         placeholder="Penyebab kerusakan / depresiasi..."
                       />
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <button 
                         type="button"
+                        disabled={isLockedNonDraft}
                         onClick={() => handleRemoveAsset(asset.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-30"
                         title="Hapus baris"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -536,9 +675,10 @@ export default function PemusnahanFormPage({ user }) {
                         Pilih Pejabat Verifikator 1 <span className="text-rose-500">*</span>
                       </label>
                       <select
+                        disabled={isLockedNonDraft}
                         value={verifikator1}
                         onChange={(e) => setVerifikator1(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#f05a22]"
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
@@ -605,9 +745,10 @@ export default function PemusnahanFormPage({ user }) {
                         Pilih Pejabat Verifikator 2 <span className="text-rose-500">*</span>
                       </label>
                       <select
+                        disabled={isLockedNonDraft}
                         value={verifikator2}
                         onChange={(e) => setVerifikator2(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#0b2046]"
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#0b2046] disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
@@ -674,9 +815,10 @@ export default function PemusnahanFormPage({ user }) {
                         Pilih Pejabat Penyetuju Akhir <span className="text-rose-500">*</span>
                       </label>
                       <select
+                        disabled={isLockedNonDraft}
                         value={verifikator3}
                         onChange={(e) => setVerifikator3(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-600"
+                        className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
@@ -747,7 +889,7 @@ export default function PemusnahanFormPage({ user }) {
         <div className="flex items-center gap-3 w-full md:w-auto">
           <button 
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isSavingDraft}
             onClick={() => navigate('/pemusnahan')}
             className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-lg transition-colors flex-1 md:flex-none"
           >
@@ -755,16 +897,25 @@ export default function PemusnahanFormPage({ user }) {
           </button>
           <button 
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
             onClick={() => handleSubmit(false)}
             className="flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex-1 md:flex-none disabled:opacity-50"
           >
-            <Save className="w-4 h-4 text-slate-500" />
-            <span>Simpan Draf</span>
+            {isSavingDraft ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
+                <span>Menyimpan Draf...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 text-slate-500" />
+                <span>Simpan Draf</span>
+              </>
+            )}
           </button>
           <button 
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
             onClick={() => handleSubmit(true)}
             className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white text-xs font-bold rounded-lg transition-colors flex-1 md:flex-none shadow-sm shadow-[#f05a22]/30 disabled:opacity-50"
           >
@@ -776,7 +927,7 @@ export default function PemusnahanFormPage({ user }) {
             ) : (
               <>
                 <Send className="w-4 h-4" />
-                <span>Kirim Permohonan</span>
+                <span>{isEditMode ? 'Simpan & Ajukan Permohonan' : 'Kirim Permohonan'}</span>
               </>
             )}
           </button>

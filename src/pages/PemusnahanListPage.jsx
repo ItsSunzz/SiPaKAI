@@ -14,7 +14,8 @@ import {
   Clock, 
   AlertCircle,
   Filter,
-  ShieldAlert
+  ShieldAlert,
+  Edit3
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
@@ -28,12 +29,13 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
   const [statusFilter, setStatusFilter] = useState('all');
   const [unitFilter, setUnitFilter] = useState('all');
 
-  // Internal modal states if parent handlers are not provided
-  const [localReviewDoc, setLocalReviewDoc] = useState(null);
-  const [localDetailDocId, setLocalDetailDocId] = useState(null);
-  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  // Modal State
+  const [selectedReviewDoc, setSelectedReviewDoc] = useState(null);
+  const [selectedDetailDoc, setSelectedDetailDoc] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
+  // Check admin or super admin privilege
   const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
 
   const showToast = (msg) => {
@@ -44,38 +46,46 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
   const fetchDocs = async () => {
     setIsLoading(true);
     try {
-      const res = await api.getDocuments({ type: 'dsp01' }).catch(() => null);
-      if (res?.data && res.data.length > 0) {
-        const mapped = res.data.map((doc) => {
-          const rawDoc = doc;
-          const chain = doc.data?.approval_chain || [
-            doc.data?.verifikator_1_id,
-            doc.data?.verifikator_2_id,
-            doc.data?.verifikator_3_id,
+      const res = await api.getDocuments({ type: 'dsp01' });
+      if (res?.data) {
+        const mapped = res.data.map(doc => {
+          const rawDoc = doc.data || {};
+          
+          // Hitung step approvals
+          const approvalHistory = doc.approvals || doc.persetujuan || [];
+          const chain = rawDoc.approval_chain || [
+            rawDoc.verifikator_1_id,
+            rawDoc.verifikator_2_id,
+            rawDoc.verifikator_3_id
           ].filter(Boolean);
 
           let currentStepNumber = 1;
-          if (Array.isArray(chain) && chain.length > 0 && doc.penyetuju_id) {
-            const idx = chain.findIndex(id => Number(id) === Number(doc.penyetuju_id));
-            if (idx !== -1) {
-              currentStepNumber = idx + 1;
-            }
-          } else if (Array.isArray(doc.persetujuan) && doc.persetujuan.length > 0) {
-            const pendingStep = doc.persetujuan.find(p => p.aksi === 'pending' || p.action === 'PENDING');
-            if (pendingStep) {
-              currentStepNumber = pendingStep.step || 1;
-            }
+          const pendingApproval = approvalHistory.find(a => (a.aksi === 'pending' || a.action === 'PENDING'));
+          if (pendingApproval && pendingApproval.step) {
+            currentStepNumber = Number(pendingApproval.step);
+          } else if (chain.length > 0 && doc.penyetuju_id) {
+            const idx = chain.findIndex(cid => Number(cid) === Number(doc.penyetuju_id));
+            if (idx !== -1) currentStepNumber = idx + 1;
           }
 
-          const currentApproverObj = doc.current_approver || doc.currentApprover || doc.penyetuju;
-          const approverName = currentApproverObj?.nama || currentApproverObj?.name || '';
-          const shortApprover = approverName ? approverName.split(' ')[0] : '';
+          let approverName = doc.approver?.name || doc.approver?.nama;
+          if (!approverName && doc.penyetuju_id) {
+            const currentApprId = Number(doc.penyetuju_id);
+            if (currentApprId === Number(rawDoc.verifikator_1_id)) approverName = 'Asisten Manager TI';
+            else if (currentApprId === Number(rawDoc.verifikator_2_id)) approverName = 'Manager Pengelolaan Aset TI';
+            else if (currentApprId === Number(rawDoc.verifikator_3_id)) approverName = 'Vice President of IT';
+          }
 
-          let stepLabel = 'Menunggu Persetujuan';
+          const rawStatus = (doc.status || '').toLowerCase();
+          const isDocDraft = rawStatus === 'draft' || rawStatus === 'draf';
+          const normalizedStatus = isDocDraft ? 'draft' : (doc.status || 'in_review');
+
+          let stepLabel = `Tahap ${currentStepNumber}: Menunggu Disposisi`;
+          const shortApprover = approverName ? approverName.split(' ')[0] : '';
           if (currentStepNumber === 1) {
-            stepLabel = `Tahap 1: Verifikasi Atasan${shortApprover ? ` (${shortApprover})` : ''}`;
+            stepLabel = `Tahap 1: Atasan Langsung${shortApprover ? ` (${shortApprover})` : ''}`;
           } else if (currentStepNumber === 2) {
-            stepLabel = `Tahap 2: Validasi Teknis TI${shortApprover ? ` (${shortApprover})` : ''}`;
+            stepLabel = `Tahap 2: Pengelola TI${shortApprover ? ` (${shortApprover})` : ''}`;
           } else if (currentStepNumber === 3) {
             stepLabel = `Tahap 3: Penyetuju Akhir${shortApprover ? ` (${shortApprover})` : ''}`;
           }
@@ -100,11 +110,12 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
             book_value: doc.data?.nilai_buku
               ? `Rp ${Number(doc.data.nilai_buku).toLocaleString('id-ID')}`
               : 'Rp 148.500.000',
-            status: doc.status || 'in_review',
+            status: normalizedStatus,
             penyetuju_id: doc.penyetuju_id,
             current_step: currentStepNumber,
             current_approver_name: approverName,
-            status_label: doc.status === 'approved' ? 'Disetujui Penuh (Sah)' :
+            status_label: isDocDraft ? 'Draf Pengajuan' :
+              doc.status === 'approved' ? 'Disetujui Penuh (Sah)' :
               doc.status === 'rejected' ? 'Ditolak / Berhenti' : stepLabel,
           };
         });
@@ -133,7 +144,11 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
       doc.requester_name?.toLowerCase().includes(q) ||
       doc.category_label?.toLowerCase().includes(q);
 
-    const matchStatus = statusFilter === 'all' || doc.status === statusFilter;
+    const matchStatus = statusFilter === 'all' || 
+      doc.status === statusFilter || 
+      (statusFilter === 'draft' && (doc.status === 'draft' || doc.status === 'draf')) ||
+      (statusFilter === 'in_review' && (doc.status === 'in_review' || doc.status === 'pending'));
+
     const matchUnit = unitFilter === 'all' || doc.requester_unit?.toLowerCase().includes(unitFilter.toLowerCase());
 
     return matchQuery && matchStatus && matchUnit;
@@ -141,7 +156,8 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
 
   // Calculate dynamic metrics
   const totalCount = documents.length;
-  const pendingCount = documents.filter(d => d.status === 'in_review').length;
+  const draftCount = documents.filter(d => d.status === 'draft' || d.status === 'draf').length;
+  const pendingCount = documents.filter(d => d.status === 'in_review' || d.status === 'pending').length;
   const approvedCount = documents.filter(d => d.status === 'approved').length;
   const rejectedCount = documents.filter(d => d.status === 'rejected').length;
 
@@ -151,25 +167,6 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
 
   const handleOpenDetail = (doc) => {
     navigate(`/pemusnahan/${doc.id}/review`);
-  };
-
-  const handleLocalAction = async (docId, action, notes, nextApproverId) => {
-    setIsSubmittingAction(true);
-    try {
-      const res = await api.actionDocument(docId, {
-        action,
-        notes,
-        next_approver_id: nextApproverId,
-      }).catch(() => null);
-
-      setLocalReviewDoc(null);
-      showToast(res?.message || (action === 'approve' ? 'Dokumen pemusnahan berhasil disetujui.' : 'Dokumen berhasil ditolak.'));
-      fetchDocs();
-    } catch (err) {
-      showToast(err.message || 'Terjadi kesalahan saat memproses disposisi.');
-    } finally {
-      setIsSubmittingAction(false);
-    }
   };
 
   return (
@@ -198,41 +195,35 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
               AUDIT & COMPLIANCE TI
             </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Kelola permohonan disposisi, verifikasi bertingkat, dan pengesahan Berita Acara pemusnahan aset TI PT Kereta Api Indonesia (Persero).
+          <p className="text-xs text-slate-500 mt-1">
+            Monitoring pengajuan permohonan pemusnahan aset TI berjenjang (DSP-01) PT Kereta Api Indonesia (Persero).
           </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex flex-wrap items-center gap-2.5">
           <button 
-            type="button"
-            onClick={fetchDocs}
+            type="button" 
+            onClick={fetchDocs} 
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs"
+            className="flex items-center gap-2 px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
             <span>Segarkan</span>
           </button>
+
           <button 
-            type="button"
-            onClick={() => alert('Fitur Ekspor XLS/PDF sedang disiapkan')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50 transition-colors shadow-2xs"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>Ekspor Data</span>
-          </button>
-          <button 
-            type="button"
+            type="button" 
             onClick={() => navigate('/pemusnahan/create')}
-            className="flex items-center gap-2 px-4 py-2 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-sm font-bold transition-colors shadow-sm shadow-[#f05a22]/20"
+            className="flex items-center gap-2 px-4 py-2 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer"
           >
             <FilePlus className="w-4 h-4" />
-            <span>Buat Pengajuan Baru</span>
+            <span>Buat Permohonan Baru [DSP-01]</span>
           </button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Total */}
         <div 
           onClick={() => setStatusFilter('all')}
@@ -304,23 +295,53 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
         </div>
       </div>
 
-      {/* Role Notice for Admin / Super Admin */}
-      {isAdminOrSuper && pendingCount > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4">
+      {/* Notice for Drafts */}
+      {draftCount > 0 && (
+        <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between gap-4 animate-in fade-in">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-              <CheckSquare className="w-4 h-4 text-amber-700" />
+            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+              <FileText className="w-4 h-4" />
             </div>
             <div>
               <h4 className="text-xs font-bold text-amber-900">
+                Tersimpan {draftCount} Dokumen Draf Permohonan Pemusnahan (DSP-01)
+              </h4>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Dokumen draf belum diajukan ke Verifikator. Anda dapat membuka dan melanjutkan penyuntingan kapan saja.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'draft' ? 'all' : 'draft')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shrink-0 ${
+              statusFilter === 'draft'
+                ? 'bg-amber-600 text-white border-amber-700'
+                : 'bg-white hover:bg-amber-100 text-amber-900 border-amber-300'
+            }`}
+          >
+            {statusFilter === 'draft' ? 'Tampilkan Semua' : `Filter Draf (${draftCount})`}
+          </button>
+        </div>
+      )}
+
+      {/* Role Notice for Admin / Super Admin */}
+      {isAdminOrSuper && pendingCount > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+              <CheckSquare className="w-4 h-4 text-blue-700" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-blue-900">
                 Akses Otorisator Aktif: Terdapat {pendingCount} Berkas Menunggu Disposisi Anda
               </h4>
-              <p className="text-[11px] text-amber-800/80 mt-0.5">
+              <p className="text-[11px] text-blue-800/80 mt-0.5">
                 Sebagai {user?.roleLabel || 'Pejabat Otorisator / Admin'}, Anda dapat meninjau rincian dokumen dan memberikan persetujuan atau penolakan dengan catatan resmi.
               </p>
             </div>
           </div>
-          <span className="px-2.5 py-1 text-[11px] font-bold rounded bg-amber-200/80 text-amber-900 shrink-0">
+          <span className="px-2.5 py-1 text-[11px] font-bold rounded bg-blue-200/80 text-blue-900 shrink-0">
             Disposisi e-Sign
           </span>
         </div>
@@ -345,6 +366,7 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-[#f05a22]"
           >
             <option value="all">Semua Status Verifikasi</option>
+            <option value="draft">Draf Pengajuan {draftCount > 0 ? `(${draftCount})` : ''}</option>
             <option value="in_review">Menunggu Persetujuan</option>
             <option value="approved">Disetujui Penuh</option>
             <option value="rejected">Ditolak / Revisi</option>
@@ -358,7 +380,10 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
             <option value="all">Semua Wilayah / Unit</option>
             <option value="Kantor Pusat">Kantor Pusat</option>
             <option value="DAOP 1">DAOP 1 Jakarta</option>
-            <option value="Senen">Stasiun Senen & Gambir</option>
+            <option value="DAOP 2">DAOP 2 Bandung</option>
+            <option value="DAOP 4">DAOP 4 Semarang</option>
+            <option value="DAOP 6">DAOP 6 Yogyakarta</option>
+            <option value="DAOP 8">DAOP 8 Surabaya</option>
           </select>
         </div>
         {(searchQuery || statusFilter !== 'all' || unitFilter !== 'all') && (
@@ -369,7 +394,7 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
               setStatusFilter('all');
               setUnitFilter('all');
             }}
-            className="text-xs text-[#f05a22] font-semibold hover:underline ml-auto"
+            className="text-xs text-rose-600 hover:text-rose-800 font-bold ml-auto cursor-pointer"
           >
             Reset Filter
           </button>
@@ -377,14 +402,14 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
       </div>
 
       {/* Main Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-xs">
-        <table className="w-full text-left text-xs whitespace-nowrap min-w-[900px]">
-          <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500 font-bold tracking-wider">
-            <tr>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <th className="px-5 py-3.5 w-12 text-center">NO</th>
-              <th className="px-5 py-3.5">NO. DOKUMEN DISPOSISI</th>
-              <th className="px-5 py-3.5">TIPE FORMULIR</th>
-              <th className="px-5 py-3.5">OBJEK & PERANGKAT TI</th>
+              <th className="px-5 py-3.5">NOMOR REGISTRASI</th>
+              <th className="px-5 py-3.5">TIPE DOKUMEN</th>
+              <th className="px-5 py-3.5">RINCIAN ASET</th>
               <th className="px-5 py-3.5">TANGGAL</th>
               <th className="px-5 py-3.5">PEMOHON & UNIT</th>
               <th className="px-5 py-3.5">STATUS</th>
@@ -395,8 +420,8 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
             {isLoading ? (
               <tr>
                 <td colSpan="8" className="px-6 py-12 text-center text-slate-400">
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <RefreshCw className="w-5 h-5 animate-spin text-[#f05a22]" />
+                  <div className="flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
                     <span>Memuat daftar dokumen pemusnahan...</span>
                   </div>
                 </td>
@@ -410,7 +435,8 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
               </tr>
             ) : (
               filteredDocuments.map((doc, idx) => {
-                const isPending = doc.status === 'in_review';
+                const isDraft = doc.status === 'draft' || doc.status === 'draf';
+                const isPending = !isDraft && (doc.status === 'in_review' || doc.status === 'pending');
                 const isApproved = doc.status === 'approved';
                 const isRejected = doc.status === 'rejected';
 
@@ -452,12 +478,14 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                     </td>
                     <td className="px-5 py-3.5">
                       <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full border inline-flex items-center gap-1.5
-                        ${isPending ? 'bg-orange-50 text-orange-700 border-orange-200' : 
+                        ${isDraft ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                          isPending ? 'bg-orange-50 text-orange-700 border-orange-200' : 
                           isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
                           isRejected ? 'bg-rose-50 text-rose-700 border-rose-200' :
                           'bg-slate-50 text-slate-700 border-slate-200'}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${
+                          isDraft ? 'bg-amber-500' :
                           isPending ? 'bg-orange-500 animate-pulse' : 
                           isApproved ? 'bg-emerald-500' : 
                           isRejected ? 'bg-rose-500' : 'bg-slate-400'
@@ -467,14 +495,36 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <div className="flex items-center justify-center">
-                        {(() => {
+                        {isDraft ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              id={`btn-edit-draft-${doc.id || idx}`}
+                              onClick={() => navigate(`/pemusnahan/${doc.id}/edit`)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#f05a22] hover:bg-[#d94a18] text-white transition-all shadow-2xs cursor-pointer"
+                              title="Edit dan lanjutkan pengajuan draf permohonan"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit Draf</span>
+                            </button>
+                            <button
+                              type="button"
+                              id={`btn-view-${doc.id || idx}`}
+                              onClick={() => handleOpenReview(doc)}
+                              className="inline-flex items-center p-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                              title="Lihat Pratinjau Draf"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                          </div>
+                        ) : (() => {
                           const canAct = isPending && (isAdminOrSuper || (user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)));
                           return (
                             <button
                               type="button"
                               id={`btn-review-${doc.id || idx}`}
                               onClick={() => handleOpenReview(doc)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
+                              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
                                 canAct
                                   ? 'bg-[#f05a22] hover:bg-[#d94a18] text-white shadow-[#f05a22]/20'
                                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
