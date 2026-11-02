@@ -15,11 +15,19 @@ import {
   AlertCircle,
   Filter,
   ShieldAlert,
-  Edit3
+  Edit3,
+  RotateCcw
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
 import DocumentDetailModal from '../components/DocumentDetailModal';
+
+const formatJabatanText = (jabatan) => {
+  if (!jabatan) return '';
+  if (typeof jabatan === 'string') return jabatan;
+  if (typeof jabatan === 'object') return jabatan.nama || jabatan.name || jabatan.kode || '';
+  return String(jabatan);
+};
 
 export default function PemusnahanListPage({ user, onReviewDocument, onViewDocument }) {
   const navigate = useNavigate();
@@ -46,54 +54,109 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
   const fetchDocs = async () => {
     setIsLoading(true);
     try {
-      const res = await api.getDocuments({ type: 'dsp01' });
+      const [res, approversRes] = await Promise.all([
+        api.getDocuments({ type: 'dsp01' }),
+        api.getApprovers('all=1').catch(() => api.getApprovers()).catch(() => []),
+      ]);
+      const approversList = Array.isArray(approversRes) ? approversRes : (approversRes?.data || []);
+
+      let storedApproversMap = {};
+      try {
+        storedApproversMap = JSON.parse(localStorage.getItem('sipakai_dsp01_approvers') || '{}');
+      } catch (e) {}
+
       if (res?.data) {
         const mapped = res.data.map(doc => {
           const rawDoc = doc.data || {};
-          
-          // Hitung step approvals
+          const docNum = doc.number || doc.nomor || `PMH/000${doc.id}/X/2026`;
+          const localEntry =
+            storedApproversMap[String(doc.id)] ||
+            storedApproversMap[String(docNum)] ||
+            (rawDoc.revisi_dari_id ? storedApproversMap[String(rawDoc.revisi_dari_id)] : null);
+
+          // Hitung step approvals sesuai pilihan pemohon
           const approvalHistory = doc.approvals || doc.persetujuan || [];
-          const chain = rawDoc.approval_chain || [
-            rawDoc.verifikator_1_id,
-            rawDoc.verifikator_2_id,
-            rawDoc.verifikator_3_id
-          ].filter(Boolean);
+          const chain = (Array.isArray(rawDoc.approval_chain) && rawDoc.approval_chain.length > 0)
+            ? rawDoc.approval_chain
+            : (Array.isArray(localEntry?.approval_chain) && localEntry.approval_chain.length > 0)
+            ? localEntry.approval_chain
+            : [
+                rawDoc.verifikator_1_id || rawDoc.verifikator_1?.id || localEntry?.verifikator_1_id || localEntry?.v1?.id,
+                rawDoc.verifikator_2_id || rawDoc.verifikator_2?.id || localEntry?.verifikator_2_id || localEntry?.v2?.id,
+                rawDoc.verifikator_3_id || rawDoc.verifikator_3?.id || localEntry?.verifikator_3_id || localEntry?.v3?.id,
+              ].filter(Boolean);
 
           let currentStepNumber = 1;
           const pendingApproval = approvalHistory.find(a => (a.aksi === 'pending' || a.action === 'PENDING'));
-          if (pendingApproval && pendingApproval.step) {
-            currentStepNumber = Number(pendingApproval.step);
-          } else if (chain.length > 0 && doc.penyetuju_id) {
+          const rejectedApproval = approvalHistory.find(a => (a.aksi === 'rejected' || a.action === 'REJECTED'));
+          if (chain.length > 0 && doc.penyetuju_id) {
             const idx = chain.findIndex(cid => Number(cid) === Number(doc.penyetuju_id));
             if (idx !== -1) currentStepNumber = idx + 1;
+          } else if (pendingApproval && pendingApproval.step) {
+            currentStepNumber = Number(pendingApproval.step);
+          } else if (rejectedApproval && rejectedApproval.step) {
+            currentStepNumber = Number(rejectedApproval.step);
           }
 
-          let approverName = doc.approver?.name || doc.approver?.nama;
-          if (!approverName && doc.penyetuju_id) {
-            const currentApprId = Number(doc.penyetuju_id);
-            if (currentApprId === Number(rawDoc.verifikator_1_id)) approverName = 'Asisten Manager TI';
-            else if (currentApprId === Number(rawDoc.verifikator_2_id)) approverName = 'Manager Pengelolaan Aset TI';
-            else if (currentApprId === Number(rawDoc.verifikator_3_id)) approverName = 'Vice President of IT';
-          }
+          // Resolusi nama & jabatan pejabat verifikator sesuai pilihan pemohon pada tahap aktif
+          const activeStepVerifierId =
+            rawDoc[`verifikator_${currentStepNumber}_id`] ||
+            rawDoc[`verifikator_${currentStepNumber}`]?.id ||
+            localEntry?.[`verifikator_${currentStepNumber}_id`] ||
+            localEntry?.[`v${currentStepNumber}`]?.id ||
+            chain[currentStepNumber - 1] ||
+            doc.penyetuju_id;
+
+          const matchedApproverUser = activeStepVerifierId
+            ? approversList.find(u => Number(u.id) === Number(activeStepVerifierId))
+            : null;
+          const localStepObj = rawDoc[`verifikator_${currentStepNumber}`] || localEntry?.[`v${currentStepNumber}`];
+
+          const approverName =
+            rawDoc[`verifikator_${currentStepNumber}_nama`] ||
+            localStepObj?.name ||
+            localStepObj?.nama ||
+            matchedApproverUser?.nama ||
+            matchedApproverUser?.name ||
+            doc.current_approver?.nama ||
+            doc.current_approver?.name ||
+            doc.approver?.name ||
+            doc.approver?.nama ||
+            pendingApproval?.approver?.nama ||
+            pendingApproval?.approver?.name ||
+            '';
+
+          const approverJabatan =
+            rawDoc[`verifikator_${currentStepNumber}_jabatan`] ||
+            formatJabatanText(localStepObj?.jabatan) ||
+            formatJabatanText(matchedApproverUser?.jabatan) ||
+            formatJabatanText(doc.current_approver?.jabatan) ||
+            formatJabatanText(doc.approver?.jabatan) ||
+            formatJabatanText(pendingApproval?.approver?.jabatan) ||
+            '';
 
           const rawStatus = (doc.status || '').toLowerCase();
           const isDocDraft = rawStatus === 'draft' || rawStatus === 'draf';
-          const normalizedStatus = isDocDraft ? 'draft' : (doc.status || 'in_review');
+          const isDocRejected = rawStatus === 'rejected' || rawStatus === 'ditolak';
+          const normalizedStatus = isDocDraft ? 'draft' : isDocRejected ? 'rejected' : (doc.status || 'in_review');
+
+          const rejectionNote = rejectedApproval?.catatan || rejectedApproval?.note || rawDoc.catatan_penolakan || '';
 
           let stepLabel = `Tahap ${currentStepNumber}: Menunggu Disposisi`;
-          const shortApprover = approverName ? approverName.split(' ')[0] : '';
-          if (currentStepNumber === 1) {
-            stepLabel = `Tahap 1: Atasan Langsung${shortApprover ? ` (${shortApprover})` : ''}`;
+          if (approverName) {
+            stepLabel = `Tahap ${currentStepNumber}: ${approverName}${approverJabatan ? ` (${approverJabatan})` : ''}`;
+          } else if (currentStepNumber === 1) {
+            stepLabel = 'Tahap 1: Verifikasi Atasan Langsung';
           } else if (currentStepNumber === 2) {
-            stepLabel = `Tahap 2: Pengelola TI${shortApprover ? ` (${shortApprover})` : ''}`;
+            stepLabel = 'Tahap 2: Validasi Teknis Pengelola TI';
           } else if (currentStepNumber === 3) {
-            stepLabel = `Tahap 3: Penyetuju Akhir${shortApprover ? ` (${shortApprover})` : ''}`;
+            stepLabel = 'Tahap 3: Penyetuju Akhir';
           }
 
           return {
             ...rawDoc,
             id: doc.id,
-            number: doc.number || doc.nomor || `PMH/000${doc.id}/X/2026`,
+            number: docNum,
             inventory_code: doc.data?.id_aset || doc.data?.no_inventaris || `AST-KAI-${doc.id}`,
             type: doc.type || doc.tipe || 'dsp01',
             category_label: doc.type === 'dsp01' ? 'Permohonan Pemusnahan Aset TI' :
@@ -111,12 +174,15 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
               ? `Rp ${Number(doc.data.nilai_buku).toLocaleString('id-ID')}`
               : 'Rp 148.500.000',
             status: normalizedStatus,
-            penyetuju_id: doc.penyetuju_id,
+            penyetuju_id: doc.penyetuju_id || activeStepVerifierId,
             current_step: currentStepNumber,
             current_approver_name: approverName,
+            rejection_note: rejectionNote,
+            is_revised: Boolean(rawDoc.is_revised || rawDoc.catatan_revisi),
+            revisi_ke: Number(rawDoc.revisi_ke) || 0,
             status_label: isDocDraft ? 'Draf Pengajuan' :
               doc.status === 'approved' ? 'Disetujui Penuh (Sah)' :
-              doc.status === 'rejected' ? 'Ditolak / Berhenti' : stepLabel,
+              isDocRejected ? 'Ditolak / Perlu Revisi' : stepLabel,
           };
         });
         setDocuments(mapped);
@@ -142,12 +208,14 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
       doc.number?.toLowerCase().includes(q) ||
       doc.inventory_code?.toLowerCase().includes(q) ||
       doc.requester_name?.toLowerCase().includes(q) ||
-      doc.category_label?.toLowerCase().includes(q);
+      doc.category_label?.toLowerCase().includes(q) ||
+      doc.current_approver_name?.toLowerCase().includes(q);
 
     const matchStatus = statusFilter === 'all' || 
       doc.status === statusFilter || 
       (statusFilter === 'draft' && (doc.status === 'draft' || doc.status === 'draf')) ||
-      (statusFilter === 'in_review' && (doc.status === 'in_review' || doc.status === 'pending'));
+      (statusFilter === 'in_review' && (doc.status === 'in_review' || doc.status === 'pending')) ||
+      (statusFilter === 'rejected' && (doc.status === 'rejected' || doc.status === 'ditolak'));
 
     const matchUnit = unitFilter === 'all' || doc.requester_unit?.toLowerCase().includes(unitFilter.toLowerCase());
 
@@ -159,7 +227,7 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
   const draftCount = documents.filter(d => d.status === 'draft' || d.status === 'draf').length;
   const pendingCount = documents.filter(d => d.status === 'in_review' || d.status === 'pending').length;
   const approvedCount = documents.filter(d => d.status === 'approved').length;
-  const rejectedCount = documents.filter(d => d.status === 'rejected').length;
+  const rejectedCount = documents.filter(d => d.status === 'rejected' || d.status === 'ditolak').length;
 
   const handleOpenReview = (doc) => {
     navigate(`/pemusnahan/${doc.id}/review`);
@@ -290,10 +358,40 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <h3 className="text-3xl font-black text-rose-600">{rejectedCount}</h3>
-            <span className="text-xs text-rose-700/80 font-medium">Dokumen Ditolak</span>
+            <span className="text-xs text-rose-700/80 font-medium">Perlu Revisi</span>
           </div>
         </div>
       </div>
+
+      {/* Notice for Rejected Documents Requiring Revision */}
+      {rejectedCount > 0 && (
+        <div className="bg-rose-50/90 border border-rose-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+              <RotateCcw className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-rose-900">
+                Terdapat {rejectedCount} Dokumen Permohonan Pemusnahan (DSP-01) yang Ditolak &amp; Memerlukan Revisi
+              </h4>
+              <p className="text-[11px] text-rose-700 mt-0.5">
+                Silakan buka <strong>Formulir Revisi</strong> pada dokumen yang ditolak untuk memperbaiki rincian aset atau referensi sesuai catatan verifikator dan mengajukannya kembali.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'rejected' ? 'all' : 'rejected')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shrink-0 ${
+              statusFilter === 'rejected'
+                ? 'bg-rose-600 text-white border-rose-700'
+                : 'bg-white hover:bg-rose-100 text-rose-900 border-rose-300'
+            }`}
+          >
+            {statusFilter === 'rejected' ? 'Tampilkan Semua' : `Lihat Dokumen Ditolak (${rejectedCount})`}
+          </button>
+        </div>
+      )}
 
       {/* Notice for Drafts */}
       {draftCount > 0 && (
@@ -369,7 +467,7 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
             <option value="draft">Draf Pengajuan {draftCount > 0 ? `(${draftCount})` : ''}</option>
             <option value="in_review">Menunggu Persetujuan</option>
             <option value="approved">Disetujui Penuh</option>
-            <option value="rejected">Ditolak / Revisi</option>
+            <option value="rejected">Ditolak / Revisi {rejectedCount > 0 ? `(${rejectedCount})` : ''}</option>
           </select>
 
           <select 
@@ -438,7 +536,7 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                 const isDraft = doc.status === 'draft' || doc.status === 'draf';
                 const isPending = !isDraft && (doc.status === 'in_review' || doc.status === 'pending');
                 const isApproved = doc.status === 'approved';
-                const isRejected = doc.status === 'rejected';
+                const isRejected = doc.status === 'rejected' || doc.status === 'ditolak';
 
                 return (
                   <tr key={doc.id || idx} className="hover:bg-slate-50/70 transition-colors">
@@ -446,7 +544,14 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                       {idx + 1}
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="font-bold text-[#0b2046] font-mono text-xs">{doc.number}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-[#0b2046] font-mono text-xs">{doc.number}</span>
+                        {doc.is_revised && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-bold">
+                            Revisi {doc.revisi_ke > 0 ? `#${doc.revisi_ke}` : ''}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-400 mt-0.5">Klasifikasi: Aset Operasional</div>
                     </td>
                     <td className="px-5 py-3.5">
@@ -492,6 +597,11 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                         }`}></span>
                         <span>{doc.status_label}</span>
                       </span>
+                      {isRejected && doc.rejection_note && (
+                        <div className="text-[10px] text-rose-600 mt-1 max-w-[200px] truncate" title={`Catatan Penolakan: ${doc.rejection_note}`}>
+                          Catatan: &ldquo;{doc.rejection_note}&rdquo;
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <div className="flex items-center justify-center">
@@ -513,6 +623,28 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
                               onClick={() => handleOpenReview(doc)}
                               className="inline-flex items-center p-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all cursor-pointer"
                               title="Lihat Pratinjau Draf"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                          </div>
+                        ) : isRejected ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              id={`btn-revisi-${doc.id || idx}`}
+                              onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-2xs cursor-pointer"
+                              title="Buka Formulir Revisi untuk memperbaiki dan mengajukan ulang permohonan yang ditolak"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Formulir Revisi</span>
+                            </button>
+                            <button
+                              type="button"
+                              id={`btn-view-rejected-${doc.id || idx}`}
+                              onClick={() => handleOpenReview(doc)}
+                              className="inline-flex items-center p-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                              title="Lihat Rincian & Catatan Penolakan"
                             >
                               <Eye className="w-3.5 h-3.5 text-slate-500" />
                             </button>

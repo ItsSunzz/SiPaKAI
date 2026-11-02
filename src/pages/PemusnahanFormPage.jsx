@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
   Calendar, 
   User, 
@@ -20,18 +20,36 @@ import {
   ArrowRight,
   GitBranch,
   Lock,
-  Clock
+  Clock,
+  RotateCcw,
+  XCircle,
+  Edit3
 } from 'lucide-react';
 import { api } from '../services/api';
+
+const REVISION_CATEGORY_OPTIONS = [
+  'Perbaikan Nomor Seri / ID Aset SAP',
+  'Penyesuaian Spesifikasi & Alasan Teknis Kerusakan',
+  'Pembaruan Nomor Referensi Nota Dinas',
+  'Penambahan / Pengurangan Item Perangkat',
+  'Penyesuaian Pejabat Verifikator',
+];
 
 export default function PemusnahanFormPage({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEditMode = Boolean(id);
+  const isRevisiRoute = location.pathname.endsWith('/revisi');
 
   const [isLoadingDoc, setIsLoadingDoc] = useState(isEditMode);
   const [isLockedNonDraft, setIsLockedNonDraft] = useState(false);
   const [existingDoc, setExistingDoc] = useState(null);
+  const [docStatus, setDocStatus] = useState('');
+
+  // Revision form state
+  const [revisionNote, setRevisionNote] = useState('');
+  const [selectedChanges, setSelectedChanges] = useState([]);
 
   const [assets, setAssets] = useState([
     { id: 1, nama: 'Server Dell PowerEdge R740', jenis: 'Fisik (Hardware)', sn: 'SN-98214-KAI-SRV', alasan: 'Kerusakan fatal motherboard & melewati batas usia depresiasi 5 tahun' },
@@ -52,13 +70,15 @@ export default function PemusnahanFormPage({ user }) {
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(null);
 
-  // Fetch approvers from backend
+  const isRevisionMode = isEditMode && (isRevisiRoute || docStatus === 'rejected' || docStatus === 'ditolak');
+
+  // Fetch all approvers from backend (all=1 ensures complete list of officials)
   useEffect(() => {
     const fetchApprovers = async () => {
       try {
         setIsLoadingApprovers(true);
-        const res = await api.getApprovers();
-        const list = Array.isArray(res) ? res : (res.data || []);
+        const res = await api.getApprovers('all=1').catch(() => api.getApprovers());
+        const list = Array.isArray(res) ? res : (res?.data || []);
         setApprovers(list);
 
         // Smart auto-selection for the 3 roles based on hierarchy (only in create mode)
@@ -94,7 +114,7 @@ export default function PemusnahanFormPage({ user }) {
     fetchApprovers();
   }, [user, isEditMode]);
 
-  // Load draft document when in Edit Mode
+  // Load draft or rejected document when in Edit / Revision Mode
   useEffect(() => {
     if (!id) return;
     async function loadDraftDoc() {
@@ -106,21 +126,44 @@ export default function PemusnahanFormPage({ user }) {
           setExistingDoc(doc);
           const d = doc.data || {};
           const status = (doc.status || '').toLowerCase();
-          if (status && status !== 'draft' && status !== 'draf') {
+          setDocStatus(status);
+
+          // Lock only if document is neither draft nor rejected (unless explicitly opened via /revisi for testing)
+          if (status && status !== 'draft' && status !== 'draf' && status !== 'rejected' && status !== 'ditolak' && !isRevisiRoute) {
             setIsLockedNonDraft(true);
+          } else {
+            setIsLockedNonDraft(false);
           }
 
           if (d.nomor_referensi || doc.nomor || doc.number) {
             setReference(d.nomor_referensi || doc.nomor || doc.number || '');
           }
-          if (d.verifikator_1_id || doc.approver_id) {
-            setVerifikator1(String(d.verifikator_1_id || doc.approver_id));
+
+          // Restore chosen verifiers from doc.data, approval_chain, approvals, or localStorage backup
+          let localSavedEntry = null;
+          try {
+            const storedMap = JSON.parse(localStorage.getItem('sipakai_dsp01_approvers') || '{}');
+            localSavedEntry = storedMap[String(doc.id)] || (doc.number ? storedMap[String(doc.number)] : null) || (doc.nomor ? storedMap[String(doc.nomor)] : null);
+          } catch (e) {}
+
+          const chainArr = Array.isArray(d.approval_chain) && d.approval_chain.length > 0
+            ? d.approval_chain
+            : (Array.isArray(localSavedEntry?.approval_chain) ? localSavedEntry.approval_chain : []);
+          const docApprovals = doc.approvals || doc.persetujuan || [];
+
+          const resolvedV1 = d.verifikator_1_id || d.verifikator_1?.id || chainArr[0] || localSavedEntry?.verifikator_1_id || localSavedEntry?.v1?.id || docApprovals.find(a => Number(a.step) === 1)?.approver_id || doc.approver_id || doc.penyetuju_id;
+          const resolvedV2 = d.verifikator_2_id || d.verifikator_2?.id || chainArr[1] || localSavedEntry?.verifikator_2_id || localSavedEntry?.v2?.id || docApprovals.find(a => Number(a.step) === 2)?.approver_id;
+          const resolvedV3 = d.verifikator_3_id || d.verifikator_3?.id || chainArr[2] || localSavedEntry?.verifikator_3_id || localSavedEntry?.v3?.id || docApprovals.find(a => Number(a.step) === 3)?.approver_id;
+
+          if (resolvedV1) setVerifikator1(String(resolvedV1));
+          if (resolvedV2) setVerifikator2(String(resolvedV2));
+          if (resolvedV3) setVerifikator3(String(resolvedV3));
+
+          if (d.catatan_revisi) {
+            setRevisionNote(d.catatan_revisi);
           }
-          if (d.verifikator_2_id) {
-            setVerifikator2(String(d.verifikator_2_id));
-          }
-          if (d.verifikator_3_id) {
-            setVerifikator3(String(d.verifikator_3_id));
+          if (Array.isArray(d.kategori_revisi)) {
+            setSelectedChanges(d.kategori_revisi);
           }
 
           const docItems = doc.items || d.items;
@@ -135,14 +178,14 @@ export default function PemusnahanFormPage({ user }) {
           }
         }
       } catch (err) {
-        console.error('Failed to load draft document for edit:', err);
-        setSubmitError('Gagal memuat dokumen draf: ' + (err.message || 'Dokumen tidak ditemukan'));
+        console.error('Failed to load document for edit/revision:', err);
+        setSubmitError('Gagal memuat dokumen: ' + (err.message || 'Dokumen tidak ditemukan'));
       } finally {
         setIsLoadingDoc(false);
       }
     }
     loadDraftDoc();
-  }, [id]);
+  }, [id, isRevisiRoute]);
 
   const getApproverDetail = (id) => {
     if (!id) return null;
@@ -157,6 +200,26 @@ export default function PemusnahanFormPage({ user }) {
       unit_kerja: appr.unit_kerja || 'Unit Kantor Pusat',
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(appr.name || appr.nama)}&background=0b2046&color=fff`,
     };
+  };
+
+  // Extract rejection details from existingDoc
+  const approvalHistory = existingDoc?.approvals || existingDoc?.persetujuan || [];
+  const rejectedApproval = approvalHistory.find(a => (a.action === 'REJECTED' || a.aksi === 'rejected'));
+  const rejectionReason = rejectedApproval?.catatan || rejectedApproval?.note || existingDoc?.data?.catatan_penolakan || 'Mohon periksa kembali kelengkapan nomor seri aset, spesifikasi perangkat, serta kesesuaian nomor referensi Nota Dinas pendukung.';
+  const rejectedBy = rejectedApproval?.approver?.nama || rejectedApproval?.approver?.name || 'Pejabat Verifikator Otorisator';
+  const rejectedByJabatan = (typeof rejectedApproval?.approver?.jabatan === 'object' ? rejectedApproval?.approver?.jabatan?.nama : rejectedApproval?.approver?.jabatan) || '';
+  const rejectedStep = rejectedApproval?.step || 1;
+  const rejectedDateRaw = rejectedApproval?.acted_at || existingDoc?.updated_at;
+  const rejectedDateDisplay = rejectedDateRaw
+    ? new Date(rejectedDateRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    : null;
+
+  const toggleRevisionCategory = (categoryLabel) => {
+    setSelectedChanges(prev =>
+      prev.includes(categoryLabel)
+        ? prev.filter(c => c !== categoryLabel)
+        : [...prev, categoryLabel]
+    );
   };
 
   const handleAddAsset = () => {
@@ -175,9 +238,22 @@ export default function PemusnahanFormPage({ user }) {
     (verifikator1 && verifikator3 && verifikator1 === verifikator3) ||
     (verifikator2 && verifikator3 && verifikator2 === verifikator3);
 
+  const v1Data = getApproverDetail(verifikator1);
+  const v2Data = getApproverDetail(verifikator2);
+  const v3Data = getApproverDetail(verifikator3);
+
   const handleSubmit = async (submitNow) => {
     setSubmitError(null);
     setSubmitSuccess(null);
+
+    // Validate revision note when submitting a rejected document revision
+    if (isRevisionMode && submitNow && !revisionNote.trim()) {
+      setSubmitError('Harap isi Catatan Tindak Lanjut Revisi pada bagian Evaluasi & Revisi untuk menjelaskan perbaikan yang telah dilakukan sebelum mengajukan ulang permohonan.');
+      window.scrollTo({ top: 150, behavior: 'smooth' });
+      const revInput = document.getElementById('input-catatan-revisi');
+      if (revInput) revInput.focus();
+      return;
+    }
 
     // Validate assets
     const validAssets = assets.filter(a => a.nama && a.nama.trim() !== '');
@@ -210,7 +286,7 @@ export default function PemusnahanFormPage({ user }) {
       const v2Num = verifikator2 ? Number(verifikator2) : null;
       const v3Num = verifikator3 ? Number(verifikator3) : null;
 
-      // Build chain array
+      // Build sequential approval chain array matching requester's choices
       const chain = [v1Num, v2Num, v3Num].filter(Boolean);
 
       const itemsToSave = (validAssets.length > 0 ? validAssets : assets).map((a, idx) => ({
@@ -220,11 +296,43 @@ export default function PemusnahanFormPage({ user }) {
         alasan_pemusnahan: a.alasan?.trim() || 'Kerusakan fatal & melewati batas usia pemakaian teknis',
       }));
 
+      const nextRevisiCount = (Number(existingDoc?.data?.revisi_ke) || 0) + 1;
+      const revisionMetadata = (isRevisionMode || existingDoc?.data?.is_revised)
+        ? {
+            is_revised: true,
+            revisi_ke: isRevisionMode && submitNow ? nextRevisiCount : (Number(existingDoc?.data?.revisi_ke) || 1),
+            catatan_revisi: revisionNote.trim() || existingDoc?.data?.catatan_revisi || undefined,
+            kategori_revisi: selectedChanges.length > 0 ? selectedChanges : (existingDoc?.data?.kategori_revisi || undefined),
+            revised_at: new Date().toISOString(),
+            catatan_penolakan_sebelumnya: rejectionReason || undefined,
+            riwayat_revisi: [
+              ...(Array.isArray(existingDoc?.data?.riwayat_revisi) ? existingDoc.data.riwayat_revisi : []),
+              ...(submitNow && isRevisionMode
+                ? [{
+                    revisi_ke: nextRevisiCount,
+                    tanggal: new Date().toISOString(),
+                    oleh: user?.name || existingDoc?.data?.nama_pemohon || 'Pemohon',
+                    catatan_penolakan: rejectionReason,
+                    catatan_revisi: revisionNote.trim(),
+                    kategori_revisi: selectedChanges,
+                  }]
+                : []),
+            ],
+          }
+        : {};
+
+      const v1Snapshot = v1Data ? { id: v1Num, name: v1Data.name, nama: v1Data.name, nip: v1Data.nip, jabatan: v1Data.jabatan, unit_kerja: v1Data.unit_kerja } : null;
+      const v2Snapshot = v2Data ? { id: v2Num, name: v2Data.name, nama: v2Data.name, nip: v2Data.nip, jabatan: v2Data.jabatan, unit_kerja: v2Data.unit_kerja } : null;
+      const v3Snapshot = v3Data ? { id: v3Num, name: v3Data.name, nama: v3Data.name, nip: v3Data.nip, jabatan: v3Data.jabatan, unit_kerja: v3Data.unit_kerja } : null;
+
       const payload = {
         type: 'dsp01',
         submit: submitNow,
         status: submitNow ? 'in_review' : 'draft',
         approver_id: submitNow ? v1Num : (v1Num || undefined),
+        note: isRevisionMode && revisionNote.trim()
+          ? `Revisi Permohonan (#${nextRevisiCount}): ${revisionNote.trim()}`
+          : undefined,
         data: {
           tanggal_permohonan: existingDoc?.data?.tanggal_permohonan || new Date().toISOString().split('T')[0],
           nama_pemohon: existingDoc?.data?.nama_pemohon || user?.name,
@@ -234,33 +342,100 @@ export default function PemusnahanFormPage({ user }) {
           verifikator_1_id: v1Num,
           verifikator_2_id: v2Num,
           verifikator_3_id: v3Num,
+          verifikator_1_nama: v1Data?.name || undefined,
+          verifikator_1_jabatan: v1Data?.jabatan || undefined,
+          verifikator_1_nip: v1Data?.nip || undefined,
+          verifikator_1_unit: v1Data?.unit_kerja || undefined,
+          verifikator_2_nama: v2Data?.name || undefined,
+          verifikator_2_jabatan: v2Data?.jabatan || undefined,
+          verifikator_2_nip: v2Data?.nip || undefined,
+          verifikator_2_unit: v2Data?.unit_kerja || undefined,
+          verifikator_3_nama: v3Data?.name || undefined,
+          verifikator_3_jabatan: v3Data?.jabatan || undefined,
+          verifikator_3_nip: v3Data?.nip || undefined,
+          verifikator_3_unit: v3Data?.unit_kerja || undefined,
+          verifikator_1: v1Snapshot || undefined,
+          verifikator_2: v2Snapshot || undefined,
+          verifikator_3: v3Snapshot || undefined,
           approval_chain: chain,
+          ...revisionMetadata,
         },
         items: itemsToSave,
       };
 
       let resDoc = null;
       if (isEditMode) {
-        resDoc = await api.updateDocument(id, payload);
-        if (submitNow && v1Num) {
-          await api.submitDocument(id, { approver_id: v1Num }).catch(() => null);
+        try {
+          resDoc = await api.updateDocument(id, payload);
+          if (submitNow && v1Num) {
+            const subRes = await api.submitDocument(id, {
+              approver_id: v1Num,
+              note: isRevisionMode
+                ? `Revisi Permohonan (#${nextRevisiCount}): ${revisionNote.trim()}`
+                : 'Mengajukan permohonan pemusnahan aset TI (DSP-01).',
+            }).catch(() => null);
+            if (subRes) resDoc = subRes;
+          }
+        } catch (updateErr) {
+          if (isRevisionMode) {
+            // Fallback jika backend mengunci dokumen berstatus rejected dari update langsung:
+            // buat dokumen pengajuan revisi baru yang merujuk ke dokumen yang ditolak
+            resDoc = await api.createDocument({
+              ...payload,
+              data: {
+                ...payload.data,
+                revisi_dari_id: id,
+                revisi_dari_nomor: existingDoc?.number || existingDoc?.nomor,
+              },
+            });
+          } else {
+            throw updateErr;
+          }
         }
       } else {
         resDoc = await api.createDocument(payload);
       }
 
       const createdDocId = resDoc?.document?.id || resDoc?.id || id;
+      const createdDocNumber = resDoc?.document?.number || resDoc?.document?.nomor || resDoc?.number || existingDoc?.number || existingDoc?.nomor;
+
+      // Simpan pilihan verifikator pemohon ke localStorage agar Alur Persetujuan Berjenjang selalu sinkron
+      try {
+        const storedMap = JSON.parse(localStorage.getItem('sipakai_dsp01_approvers') || '{}');
+        const entry = {
+          verifikator_1_id: v1Num,
+          verifikator_2_id: v2Num,
+          verifikator_3_id: v3Num,
+          approval_chain: chain,
+          v1: v1Snapshot,
+          v2: v2Snapshot,
+          v3: v3Snapshot,
+          updated_at: new Date().toISOString(),
+        };
+        if (createdDocId) storedMap[String(createdDocId)] = entry;
+        if (id) storedMap[String(id)] = entry;
+        if (createdDocNumber) storedMap[String(createdDocNumber)] = entry;
+        localStorage.setItem('sipakai_dsp01_approvers', JSON.stringify(storedMap));
+      } catch (e) {}
 
       if (!submitNow) {
         setDraftSavedAt(new Date());
-        setSubmitSuccess('Draf permohonan pemusnahan aset (DSP-01) berhasil disimpan.');
+        setSubmitSuccess(
+          isRevisionMode
+            ? 'Draf perbaikan revisi permohonan pemusnahan aset (DSP-01) berhasil disimpan.'
+            : 'Draf permohonan pemusnahan aset (DSP-01) berhasil disimpan.'
+        );
         setTimeout(() => {
           navigate(createdDocId ? `/pemusnahan/${createdDocId}` : '/pemusnahan');
         }, 1200);
       } else {
-        setSubmitSuccess(isEditMode 
-          ? 'Permohonan pemusnahan aset berhasil diperbarui dan dialirkan ke verifikator!' 
-          : 'Permohonan pemusnahan aset berhasil disimpan dan dialirkan ke verifikator!');
+        setSubmitSuccess(
+          isRevisionMode
+            ? 'Revisi permohonan pemusnahan aset berhasil disimpan dan diajukan kembali ke Verifikator Tahap 1!'
+            : isEditMode
+            ? 'Permohonan pemusnahan aset berhasil diperbarui dan dialirkan ke verifikator!'
+            : 'Permohonan pemusnahan aset berhasil disimpan dan dialirkan ke verifikator!'
+        );
         setTimeout(() => {
           navigate(createdDocId ? `/pemusnahan/${createdDocId}` : '/pemusnahan');
         }, 1500);
@@ -277,15 +452,13 @@ export default function PemusnahanFormPage({ user }) {
     ? new Date(existingDoc.data.tanggal_permohonan).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
-  const v1Data = getApproverDetail(verifikator1);
-  const v2Data = getApproverDetail(verifikator2);
-  const v3Data = getApproverDetail(verifikator3);
-
   if (isLoadingDoc) {
     return (
       <div className="w-full max-w-[1050px] mx-auto py-24 flex flex-col items-center justify-center gap-3 text-slate-500">
         <Loader2 className="w-8 h-8 animate-spin text-[#f05a22]" />
-        <span className="text-sm font-semibold">Memuat formulir draf permohonan pemusnahan...</span>
+        <span className="text-sm font-semibold">
+          {isRevisiRoute ? 'Memuat formulir revisi permohonan pemusnahan...' : 'Memuat formulir draf permohonan pemusnahan...'}
+        </span>
       </div>
     );
   }
@@ -295,11 +468,30 @@ export default function PemusnahanFormPage({ user }) {
       {/* Page Title */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
         <div>
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            {isRevisionMode && (
+              <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 border border-rose-200 rounded-md text-xs font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                Formulir Revisi Permohonan Ditolak
+              </span>
+            )}
+            {existingDoc && (existingDoc.number || existingDoc.nomor) && (
+              <span className="px-2.5 py-0.5 bg-slate-100 text-[#0b2046] border border-slate-200 rounded-md text-xs font-mono font-bold">
+                {existingDoc.number || existingDoc.nomor}
+              </span>
+            )}
+          </div>
           <h1 className="text-3xl font-extrabold text-[#0b2046] tracking-tight mb-1">
-            {isEditMode ? 'Edit Formulir Permohonan Pemusnahan Aset' : 'Formulir Permohonan Pemusnahan Aset'}
+            {isRevisionMode
+              ? 'Formulir Revisi Permohonan Pemusnahan Aset'
+              : isEditMode
+              ? 'Edit Formulir Permohonan Pemusnahan Aset'
+              : 'Formulir Permohonan Pemusnahan Aset'}
           </h1>
           <p className="text-sm text-slate-500">
-            Formulir ini digunakan oleh unit kerja untuk mengajukan permohonan disposisi/pemusnahan aset TI PT Kereta Api Indonesia (Persero).
+            {isRevisionMode
+              ? 'Perbaiki rincian perangkat, alasan teknis, atau dokumen pendukung sesuai catatan evaluasi verifikator untuk diajukan kembali.'
+              : 'Formulir ini digunakan oleh unit kerja untuk mengajukan permohonan disposisi/pemusnahan aset TI PT Kereta Api Indonesia (Persero).'}
           </p>
         </div>
         <button
@@ -311,30 +503,48 @@ export default function PemusnahanFormPage({ user }) {
       </div>
 
       {/* Info Banner */}
-      <div className="bg-[#f4f7fa] border border-[#e2e8f0] rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-4 mb-6 shadow-xs">
+      <div className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center gap-4 mb-6 shadow-xs ${
+        isRevisionMode ? 'bg-rose-50/70 border-rose-200' : 'bg-[#f4f7fa] border-[#e2e8f0]'
+      }`}>
         <div className="flex items-center gap-2.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-orange-600 animate-pulse"></span>
+          <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isRevisionMode ? 'bg-rose-600' : 'bg-orange-600'}`}></span>
           <span className="text-sm font-bold text-[#0b2046]">
-            Mode Aktif: {isEditMode ? 'Sunting Draf Permohonan Pemusnahan Aset TI [DSP - 01]' : 'Formulir Permohonan Pemusnahan Aset TI [DSP - 01]'}
+            Mode Aktif: {isRevisionMode
+              ? 'Formulir Revisi Permohonan Pemusnahan Aset TI [DSP - 01]'
+              : isEditMode
+              ? 'Sunting Draf Permohonan Pemusnahan Aset TI [DSP - 01]'
+              : 'Formulir Permohonan Pemusnahan Aset TI [DSP - 01]'}
           </span>
         </div>
-        <div className="px-2.5 py-1 bg-blue-100 text-[#0b2046] text-xs font-extrabold rounded tracking-wide w-fit">
-          {isEditMode ? 'MODE SUNTSING DRAF' : 'TAHAP PERMOHONAN BERJENJANG'}
+        <div className={`px-2.5 py-1 text-xs font-extrabold rounded tracking-wide w-fit ${
+          isRevisionMode
+            ? 'bg-rose-600 text-white'
+            : 'bg-blue-100 text-[#0b2046]'
+        }`}>
+          {isRevisionMode
+            ? `REVISI KE-${(Number(existingDoc?.data?.revisi_ke) || 0) + 1}`
+            : isEditMode
+            ? 'MODE SUNTING DRAF'
+            : 'TAHAP PERMOHONAN BERJENJANG'}
         </div>
         <div className="md:ml-auto flex items-center gap-2 text-xs text-slate-600">
           <Info className="w-4 h-4 text-[#f05a22] shrink-0" />
-          <span>Pengajuan akan melewati 3 tingkat verifikasi sebelum disahkan menjadi Berita Acara [DSP-02].</span>
+          <span>
+            {isRevisionMode
+              ? 'Setelah direvisi, permohonan akan diajukan ulang mulai dari Verifikator Tahap 1.'
+              : 'Pengajuan akan melewati 3 tingkat verifikasi sebelum disahkan menjadi Berita Acara [DSP-02].'}
+          </span>
         </div>
       </div>
 
-      {/* Alert if document is locked non-draft */}
+      {/* Alert if document is locked non-draft and not rejected */}
       {isLockedNonDraft && (
         <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-sm animate-in fade-in">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
             <div>
-              <span className="font-bold">Dokumen Sudah Bukan Berstatus Draf</span>
-              <p className="text-xs text-amber-800 mt-0.5">Dokumen ini telah diajukan atau sedang diproses verifikasi dalam sistem persetujuan, sehingga tidak dapat disunting kembali.</p>
+              <span className="font-bold">Dokumen Sedang Diproses / Telah Disetujui</span>
+              <p className="text-xs text-amber-800 mt-0.5">Dokumen ini sedang berada dalam alur verifikasi atau telah disahkan, sehingga tidak dapat disunting kembali.</p>
             </div>
           </div>
           <button
@@ -372,6 +582,112 @@ export default function PemusnahanFormPage({ user }) {
       )}
 
       <div className="space-y-8">
+        {/* === BAGIAN KHUSUS REVISI: EVALUASI PENOLAKAN & CATATAN REVISI PEMOHON === */}
+        {isRevisionMode && (
+          <section className="bg-white border-2 border-rose-200 rounded-xl overflow-hidden shadow-xs animate-in fade-in">
+            <div className="border-l-4 border-rose-600 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-rose-50/60 border-b border-rose-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <RotateCcw className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-rose-950">
+                    Evaluasi Penolakan &amp; Formulir Tindak Lanjut Revisi
+                  </h2>
+                  <p className="text-xs text-rose-700">
+                    Tinjau alasan penolakan dari pejabat otorisator di bawah ini dan tuliskan rincian perbaikan yang Anda lakukan.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-extrabold rounded-full border border-rose-300 flex items-center gap-1.5 self-start sm:self-auto">
+                <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                Ditolak pada Tahap {rejectedStep}
+              </span>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* 1. Kotak Informasi Alasan Penolakan dari Verifikator */}
+              <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200/80 pb-2.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-rose-900">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Catatan Resmi Pejabat Penolak (Tahap {rejectedStep}):</span>
+                  </div>
+                  <div className="text-[11px] text-rose-800 font-medium">
+                    Oleh: <strong>{rejectedBy}{rejectedByJabatan ? ` (${rejectedByJabatan})` : ''}</strong>
+                    {rejectedDateDisplay ? ` • ${rejectedDateDisplay}` : ''}
+                  </div>
+                </div>
+                <blockquote className="text-xs text-rose-950 font-semibold italic bg-white/90 p-3.5 rounded-lg border border-rose-200 leading-relaxed">
+                  &ldquo;{rejectionReason}&rdquo;
+                </blockquote>
+              </div>
+
+              {/* 2. Pilihan Aspek Perubahan yang Direvisi */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Bagian / Aspek yang Diperbaiki pada Revisi Ini <span className="text-slate-400 font-normal">(Pilih satu atau lebih)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {REVISION_CATEGORY_OPTIONS.map((opt) => {
+                    const isSelected = selectedChanges.includes(opt);
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => toggleRevisionCategory(opt)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#0b2046] text-white border-[#0b2046] shadow-2xs'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                        <span>{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Input Catatan Tindak Lanjut Revisi Pemohon */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="input-catatan-revisi" className="block text-xs font-bold text-slate-800">
+                    Catatan Tindak Lanjut / Ringkasan Perbaikan Revisi <span className="text-rose-600">* (Wajib diisi)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRevisionNote(
+                        'Telah dilakukan perbaikan rincian nomor seri/ID aset, penyesuaian alasan teknis pemusnahan, serta kelengkapan nomor referensi Nota Dinas sesuai arahan verifikator.'
+                      )
+                    }
+                    className="text-[11px] font-bold text-[#f05a22] hover:underline cursor-pointer"
+                  >
+                    + Isi Contoh Catatan Revisi
+                  </button>
+                </div>
+                <textarea
+                  id="input-catatan-revisi"
+                  rows={3}
+                  value={revisionNote}
+                  onChange={(e) => setRevisionNote(e.target.value)}
+                  placeholder="Jelaskan perbaikan yang telah Anda lakukan pada formulir permohonan ini (contoh: Memperbaiki Serial Number Server Dell dan melampirkan Nomor Referensi Nota Dinas terbaru)..."
+                  className="w-full p-3 border border-slate-300 rounded-xl text-xs text-slate-800 bg-white focus:outline-none focus:border-[#f05a22] focus:ring-2 focus:ring-orange-100"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Catatan revisi ini akan dilampirkan pada riwayat dokumen agar Verifikator mengetahui tindak lanjut koreksi yang telah dilakukan.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Bagian 1: Header & Identitas */}
         <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
           <div className="border-l-4 border-[#f05a22] px-6 py-4 flex justify-between items-center bg-white border-b border-slate-100">
@@ -549,18 +865,18 @@ export default function PemusnahanFormPage({ user }) {
           <div className="border-l-4 border-emerald-600 px-6 py-4 bg-white border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-bold text-[#0b2046] flex items-center gap-2">
-                <span>Bagian 3: Alur Persetujuan (Approval Routing)</span>
+                <span>Bagian 3: Alur Persetujuan Berjenjang (Sesuai Pilihan Pemohon)</span>
                 <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
                   3 Tingkat Verifikasi
                 </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Silakan pilih ketiga pejabat verifikator berjenjang yang akan memproses disposisi dokumen ini.
+                Silakan pilih ketiga pejabat verifikator berjenjang yang akan memproses disposisi dokumen ini secara berurutan.
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
               <Users className="w-4 h-4 text-blue-600" />
-              <span>Daftar Pejabat Otorisator KAI</span>
+              <span>Daftar Pejabat Otorisator KAI ({approvers.length} Pejabat)</span>
             </div>
           </div>
 
@@ -572,13 +888,13 @@ export default function PemusnahanFormPage({ user }) {
           )}
 
           <div className="p-6">
-            {/* Diagram Alur Persetujuan Sekuensial */}
+            {/* Diagram Alur Persetujuan Sekuensial (Dinamis sesuai Pilihan Pemohon) */}
             <div className="mb-6 p-4.5 bg-gradient-to-r from-orange-50/60 via-blue-50/50 to-emerald-50/60 rounded-xl border border-slate-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5">
                 <div className="flex items-center gap-2">
                   <GitBranch className="w-4 h-4 text-[#0b2046]" />
                   <span className="text-xs font-bold text-[#0b2046] uppercase tracking-wider">
-                    Diagram Alur Persetujuan Berjenjang (Sekuensial)
+                    Diagram Alur Persetujuan Berjenjang (Sekuensial Sesuai Pilihan Pemohon)
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] font-bold text-slate-700 bg-white/90 px-2.5 py-1 rounded border border-slate-200 shadow-2xs">
@@ -587,7 +903,7 @@ export default function PemusnahanFormPage({ user }) {
                 </div>
               </div>
 
-              {/* Stepper Pipeline */}
+              {/* Stepper Pipeline Dinamis */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 relative">
                 {/* Step 1 Node */}
                 <div className={`p-3.5 rounded-xl border transition-all ${
@@ -599,9 +915,16 @@ export default function PemusnahanFormPage({ user }) {
                     </span>
                     <span className="text-[10px] font-bold text-orange-600">Urutan #1</span>
                   </div>
-                  <div className="font-bold text-xs text-slate-900">Verifikasi Atasan Langsung</div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Memeriksa fisik aset & kewajaran permohonan di unit kerja.
+                  <div className="font-bold text-xs text-slate-900 truncate">
+                    {v1Data ? v1Data.name : 'Verifikasi Atasan Langsung'}
+                  </div>
+                  <div className="text-[11px] font-semibold text-orange-700 mt-0.5 truncate">
+                    {v1Data ? `${v1Data.jabatan} (${v1Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {v1Data
+                      ? `NIP: ${v1Data.nip} • Pemeriksaan fisik aset & kewajaran usulan`
+                      : 'Memeriksa fisik aset & kewajaran permohonan di unit kerja.'}
                   </p>
                 </div>
 
@@ -615,9 +938,16 @@ export default function PemusnahanFormPage({ user }) {
                     </span>
                     <span className="text-[10px] font-bold text-blue-700">Urutan #2</span>
                   </div>
-                  <div className="font-bold text-xs text-slate-900">Validasi Teknis Pengelola TI</div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Uji sanitasi storage, kelayakan degaussing & tag SAP.
+                  <div className="font-bold text-xs text-slate-900 truncate">
+                    {v2Data ? v2Data.name : 'Validasi Teknis Pengelola TI'}
+                  </div>
+                  <div className="text-[11px] font-semibold text-blue-700 mt-0.5 truncate">
+                    {v2Data ? `${v2Data.jabatan} (${v2Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {v2Data
+                      ? `NIP: ${v2Data.nip} • Uji sanitasi storage, degaussing & tag SAP`
+                      : 'Uji sanitasi storage, kelayakan degaussing & tag SAP.'}
                   </p>
                 </div>
 
@@ -631,9 +961,16 @@ export default function PemusnahanFormPage({ user }) {
                     </span>
                     <span className="text-[10px] font-bold text-emerald-700">Urutan #3</span>
                   </div>
-                  <div className="font-bold text-xs text-slate-900">Penyetuju Akhir (Head of Unit)</div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Pengesahan Berita Acara & penandatanganan digital terpusat.
+                  <div className="font-bold text-xs text-slate-900 truncate">
+                    {v3Data ? v3Data.name : 'Penyetuju Akhir (Head of Unit)'}
+                  </div>
+                  <div className="text-[11px] font-semibold text-emerald-700 mt-0.5 truncate">
+                    {v3Data ? `${v3Data.jabatan} (${v3Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {v3Data
+                      ? `NIP: ${v3Data.nip} • Pengesahan akhir & tanda tangan digital`
+                      : 'Pengesahan Berita Acara & penandatanganan digital terpusat.'}
                   </p>
                 </div>
               </div>
@@ -660,8 +997,8 @@ export default function PemusnahanFormPage({ user }) {
                           <span className="text-[10px] text-orange-600 font-semibold block">Pemeriksaan Awal</span>
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-orange-100 text-orange-800">
-                        Atasan Langsung
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-orange-100 text-orange-800 truncate max-w-[120px]">
+                        {v1Data?.jabatan || 'Atasan Langsung'}
                       </span>
                     </div>
 
@@ -730,8 +1067,8 @@ export default function PemusnahanFormPage({ user }) {
                           <span className="text-[10px] text-blue-700 font-semibold block">Validasi Teknis</span>
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-900">
-                        Pengelola Aset TI
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-900 truncate max-w-[120px]">
+                        {v2Data?.jabatan || 'Pengelola Aset TI'}
                       </span>
                     </div>
 
@@ -800,8 +1137,8 @@ export default function PemusnahanFormPage({ user }) {
                           <span className="text-[10px] text-emerald-700 font-semibold block">Otorisasi Akhir</span>
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">
-                        Penyetuju Akhir
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800 truncate max-w-[120px]">
+                        {v3Data?.jabatan || 'Penyetuju Akhir'}
                       </span>
                     </div>
 
@@ -865,7 +1202,7 @@ export default function PemusnahanFormPage({ user }) {
               <div>
                 <span className="font-bold text-slate-800">Prinsip Alur Sekuensial Berjenjang:</span>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Verifikator 2 hanya dapat menindaklanjuti berkas setelah Verifikator 1 menyetujui, dan Verifikator 3 setelah Verifikator 2 menyetujui. Apabila terdapat penolakan di salah satu tahap, pengajuan langsung gugur.
+                  Verifikator 2 hanya dapat menindaklanjuti berkas setelah Verifikator 1 menyetujui, dan Verifikator 3 setelah Verifikator 2 menyetujui. Apabila terdapat penolakan di salah satu tahap, pemohon dapat melakukan revisi melalui Formulir Revisi.
                 </p>
               </div>
             </div>
@@ -904,17 +1241,18 @@ export default function PemusnahanFormPage({ user }) {
             {isSavingDraft ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-                <span>Menyimpan Draf...</span>
+                <span>Menyimpan...</span>
               </>
             ) : (
               <>
                 <Save className="w-4 h-4 text-slate-500" />
-                <span>Simpan Draf</span>
+                <span>{isRevisionMode ? 'Simpan Draf Revisi' : 'Simpan Draf'}</span>
               </>
             )}
           </button>
           <button 
             type="button"
+            id="btn-submit-permohonan"
             disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
             onClick={() => handleSubmit(true)}
             className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white text-xs font-bold rounded-lg transition-colors flex-1 md:flex-none shadow-sm shadow-[#f05a22]/30 disabled:opacity-50"
@@ -927,7 +1265,13 @@ export default function PemusnahanFormPage({ user }) {
             ) : (
               <>
                 <Send className="w-4 h-4" />
-                <span>{isEditMode ? 'Simpan & Ajukan Permohonan' : 'Kirim Permohonan'}</span>
+                <span>
+                  {isRevisionMode
+                    ? 'Kirim Ulang Revisi Permohonan'
+                    : isEditMode
+                    ? 'Simpan & Ajukan Permohonan'
+                    : 'Kirim Permohonan'}
+                </span>
               </>
             )}
           </button>

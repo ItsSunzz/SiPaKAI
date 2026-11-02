@@ -27,9 +27,17 @@ import {
   Image as ImageIcon,
   PenTool,
   Edit3,
+  RotateCcw,
   X
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+
+const formatJabatanText = (jabatan) => {
+  if (!jabatan) return '';
+  if (typeof jabatan === 'string') return jabatan;
+  if (typeof jabatan === 'object') return jabatan.nama || jabatan.name || jabatan.kode || '';
+  return String(jabatan);
+};
 
 export default function PemusnahanReviewPage({ user }) {
   const { id } = useParams();
@@ -55,7 +63,7 @@ export default function PemusnahanReviewPage({ user }) {
   // Status tanda tangan di profil user
   const [hasUserSignature, setHasUserSignature] = useState(user?.has_signature || false);
 
-  // Load document and approvers
+  // Load document and all approvers (all=1)
   const loadDocumentData = async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -110,9 +118,9 @@ export default function PemusnahanReviewPage({ user }) {
 
       setDoc(docData);
 
-      // 2. Fetch approvers for forwarding
+      // 2. Fetch all approvers (with all=1 so current user and all selected officials are included)
       try {
-        const aRes = await api.getApprovers();
+        const aRes = await api.getApprovers('all=1').catch(() => api.getApprovers());
         const aList = Array.isArray(aRes) ? aRes : (aRes?.data || []);
         setApprovers(aList);
         if (aList.length > 0) {
@@ -176,98 +184,217 @@ export default function PemusnahanReviewPage({ user }) {
   const isDraft = rawStatus === 'draft' || rawStatus === 'draf';
   const isPending = !isDraft && (rawStatus === 'in_review' || rawStatus === 'pending');
   const isApproved = !isDraft && rawStatus === 'approved';
-  const isRejected = !isDraft && rawStatus === 'rejected';
+  const isRejected = !isDraft && (rawStatus === 'rejected' || rawStatus === 'ditolak');
 
-  // Role check
-  const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
-  const isCurrentApprover = user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id);
-  const canTakeAction = isPending && (isAdminOrSuper || isCurrentApprover);
+  // Read requester's saved approvers from localStorage if available
+  let localSavedApprovers = null;
+  try {
+    const storedMap = JSON.parse(localStorage.getItem('sipakai_dsp01_approvers') || '{}');
+    localSavedApprovers =
+      storedMap[String(doc.id)] ||
+      (doc.number ? storedMap[String(doc.number)] : null) ||
+      (doc.nomor ? storedMap[String(doc.nomor)] : null) ||
+      (doc.data?.revisi_dari_id ? storedMap[String(doc.data.revisi_dari_id)] : null);
+  } catch (e) {}
 
-  // Sequential Step Calculation
-  const approvalHistory = doc.approvals || doc.persetujuan || [];
-  const chain = doc.data?.approval_chain || [
-    doc.data?.verifikator_1_id,
-    doc.data?.verifikator_2_id,
-    doc.data?.verifikator_3_id,
-  ].filter(Boolean);
+  // Sequential Step & Requester Choice Calculation
+  // Hanya gunakan riwayat persetujuan pada siklus pengajuan aktif (setelah penolakan terakhir),
+  // lalu nomori ulang tahapnya 1..n agar pengajuan ulang selalu dimulai lagi dari Verifikator 1.
+  const isRejectedRow = (a) =\u003e String(a?.aksi || a?.action || '').toLowerCase() === 'rejected';
+  const sortedHistory = [...(doc.approvals || doc.persetujuan || [])].sort((a, b) =\u003e Number(a.step) - Number(b.step));
+  const rejectionIdxs = sortedHistory.reduce((acc, a, i) =\u003e (isRejectedRow(a) ? [...acc, i] : acc), []);
+  let cycleRows = sortedHistory;
+  if (rejectionIdxs.length \u003e 0) {
+    const lastRej = rejectionIdxs[rejectionIdxs.length - 1];
+    if (isRejected) {
+      const prevRej = rejectionIdxs.length \u003e 1 ? rejectionIdxs[rejectionIdxs.length - 2] : -1;
+      cycleRows = sortedHistory.slice(prevRej + 1, lastRej + 1);
+    } else {
+      cycleRows = sortedHistory.slice(lastRej + 1);
+    }
+  }
+  const approvalHistory = cycleRows.map((a, i) =\u003e ({ ...a, global_step: a.step, step: i + 1 }));
+  const dData = doc.data || {};
+
+  const chainFromData = Array.isArray(dData.approval_chain) && dData.approval_chain.length > 0
+    ? dData.approval_chain
+    : (Array.isArray(localSavedApprovers?.approval_chain) && localSavedApprovers.approval_chain.length > 0)
+    ? localSavedApprovers.approval_chain
+    : [
+        dData.verifikator_1_id || dData.verifikator_1?.id || localSavedApprovers?.verifikator_1_id || localSavedApprovers?.v1?.id,
+        dData.verifikator_2_id || dData.verifikator_2?.id || localSavedApprovers?.verifikator_2_id || localSavedApprovers?.v2?.id,
+        dData.verifikator_3_id || dData.verifikator_3?.id || localSavedApprovers?.verifikator_3_id || localSavedApprovers?.v3?.id,
+      ].filter(Boolean);
+
+  const chain = chainFromData;
+  const currentApproverObj = doc.current_approver || doc.currentApprover || doc.penyetuju || doc.approver;
+
+  // Helper untuk meresolusi pejabat yang dipilih pemohon pada setiap tahapan (1, 2, 3)
+  const resolveVerifierForStep = (stepNum, defaultName, defaultRole) => {
+    const historyItem = approvalHistory.find(a => Number(a.step) === stepNum);
+    const dataObj = dData[`verifikator_${stepNum}`] || localSavedApprovers?.[`v${stepNum}`];
+    const explicitId =
+      dData[`verifikator_${stepNum}_id`] ||
+      dataObj?.id ||
+      localSavedApprovers?.[`verifikator_${stepNum}_id`] ||
+      chain[stepNum - 1] ||
+      historyItem?.approver_id ||
+      historyItem?.user_id ||
+      historyItem?.approver?.id ||
+      (stepNum === 1 && !chain.length ? doc.penyetuju_id : null);
+
+    const foundInApprovers = explicitId && Array.isArray(approvers)
+      ? approvers.find(u => Number(u.id) === Number(explicitId))
+      : null;
+
+    const historyActor = historyItem?.approver;
+    const isCurrentTarget = explicitId && doc.penyetuju_id && Number(explicitId) === Number(doc.penyetuju_id);
+
+    // Prioritaskan data pilihan pemohon & master approvers / history
+    const name =
+      (historyItem && historyItem.aksi !== 'pending' && historyItem.action !== 'PENDING' && (historyActor?.nama || historyActor?.name)) ||
+      dData[`verifikator_${stepNum}_nama`] ||
+      dataObj?.name ||
+      dataObj?.nama ||
+      foundInApprovers?.nama ||
+      foundInApprovers?.name ||
+      historyActor?.nama ||
+      historyActor?.name ||
+      (isCurrentTarget ? (currentApproverObj?.nama || currentApproverObj?.name) : null) ||
+      defaultName;
+
+    const jabatan =
+      (historyItem && historyItem.aksi !== 'pending' && historyItem.action !== 'PENDING' && formatJabatanText(historyActor?.jabatan)) ||
+      dData[`verifikator_${stepNum}_jabatan`] ||
+      formatJabatanText(dataObj?.jabatan) ||
+      formatJabatanText(foundInApprovers?.jabatan) ||
+      formatJabatanText(historyActor?.jabatan) ||
+      (isCurrentTarget ? formatJabatanText(currentApproverObj?.jabatan) : '') ||
+      defaultRole;
+
+    const nip =
+      dData[`verifikator_${stepNum}_nip`] ||
+      dataObj?.nip ||
+      foundInApprovers?.nip ||
+      historyActor?.nip ||
+      (isCurrentTarget ? currentApproverObj?.nip : '') ||
+      '';
+
+    const unit =
+      dData[`verifikator_${stepNum}_unit`] ||
+      dataObj?.unit_kerja ||
+      foundInApprovers?.unit_kerja ||
+      historyActor?.unit_kerja ||
+      '';
+
+    return {
+      targetUserId: explicitId ? Number(explicitId) : null,
+      name,
+      jabatan,
+      nip,
+      unit,
+      displayFull: jabatan ? `${name} (${jabatan})` : name,
+    };
+  };
+
+  const step1Resolved = resolveVerifierForStep(1, 'Ahmad Fauzi Setiawan', 'Asisten Manager TI');
+  const step2Resolved = resolveVerifierForStep(2, 'Bambang Suryo Pratama', 'Manager TI');
+  const step3Resolved = resolveVerifierForStep(3, 'Raden Dwi Cahyono', 'Vice President');
+
+  const allSequentialSteps = [
+    {
+      step: 1,
+      title: 'Tahap 1: Verifikasi Atasan Langsung',
+      role: step1Resolved.jabatan || 'Atasan Langsung Unit Pemohon',
+      desc: 'Pemeriksaan fisik aset & kewajaran permohonan di unit asal.',
+      targetUserId: step1Resolved.targetUserId,
+      verifierName: step1Resolved.name,
+      verifierJabatan: step1Resolved.jabatan,
+      verifierNip: step1Resolved.nip,
+      verifierUnit: step1Resolved.unit,
+      displayFull: step1Resolved.displayFull,
+    },
+    {
+      step: 2,
+      title: 'Tahap 2: Validasi Teknis Pengelola TI',
+      role: step2Resolved.jabatan || 'Pengelola Aset TI',
+      desc: 'Sanitasi media storage, kelayakan degaussing & tag SAP.',
+      targetUserId: step2Resolved.targetUserId,
+      verifierName: step2Resolved.name,
+      verifierJabatan: step2Resolved.jabatan,
+      verifierNip: step2Resolved.nip,
+      verifierUnit: step2Resolved.unit,
+      displayFull: step2Resolved.displayFull,
+    },
+    {
+      step: 3,
+      title: 'Tahap 3: Penyetuju Akhir (Head of Unit)',
+      role: step3Resolved.jabatan || 'Penyetuju Akhir / Head of Unit',
+      desc: 'Pengesahan Berita Acara & penandatanganan digital terpusat.',
+      targetUserId: step3Resolved.targetUserId,
+      verifierName: step3Resolved.name,
+      verifierJabatan: step3Resolved.jabatan,
+      verifierNip: step3Resolved.nip,
+      verifierUnit: step3Resolved.unit,
+      displayFull: step3Resolved.displayFull,
+    },
+  ];
+
+  // Jika pemohon secara spesifik memilih jumlah tahap tertentu di chain (misal 1, 2, atau 3 tahap), sesuaikan daftar tahapannya
+  const sequentialSteps = chain.length > 0
+    ? allSequentialSteps.filter(s => s.step <= chain.length || Boolean(s.targetUserId))
+    : allSequentialSteps;
+
+  const rejectedRecord = approvalHistory.find(a => (a.aksi === 'rejected' || a.action === 'REJECTED'));
+  const rejectionReasonText = rejectedRecord?.catatan || rejectedRecord?.note || doc.data?.catatan_penolakan || '';
+  const rejectedStepIdx = rejectedRecord?.step ? Number(rejectedRecord.step) - 1 : 0;
+  const rejectedByActor =
+    rejectedRecord?.approver?.nama ||
+    rejectedRecord?.approver?.name ||
+    sequentialSteps[rejectedStepIdx]?.verifierName ||
+    'Pejabat Verifikator';
 
   let currentActiveStep = 1;
   if (isApproved) {
-    currentActiveStep = 4; // Seluruh 3 tahapan selesai disetujui
+    currentActiveStep = sequentialSteps.length + 1; // Seluruh tahapan selesai disetujui
   } else if (isPending) {
-    // Ambil step dari record pending aktif di database
+    // 1. Cek posisi penyetuju_id saat ini pada urutan pilihan pemohon
+    const matchedStepByPenyetuju = doc.penyetuju_id
+      ? sequentialSteps.find(s => s.targetUserId && Number(s.targetUserId) === Number(doc.penyetuju_id))
+      : null;
     const pendingRecord = approvalHistory.find(a => (a.aksi === 'pending' || a.action === 'PENDING'));
-    if (pendingRecord && pendingRecord.step) {
+
+    if (matchedStepByPenyetuju) {
+      currentActiveStep = matchedStepByPenyetuju.step;
+    } else if (pendingRecord && pendingRecord.step) {
       currentActiveStep = Number(pendingRecord.step);
-    } else if (Array.isArray(chain) && chain.length > 0 && doc.penyetuju_id) {
-      const idx = chain.findIndex(cid => Number(cid) === Number(doc.penyetuju_id));
-      if (idx !== -1) currentActiveStep = idx + 1;
+    } else {
+      // Hitung dari jumlah step yang sudah APPROVED
+      const approvedStepsCount = approvalHistory.filter(a => (a.aksi === 'approved' || a.action === 'APPROVED')).length;
+      currentActiveStep = Math.min(approvedStepsCount + 1, sequentialSteps.length);
     }
   } else if (isRejected) {
-    const rejectedRecord = approvalHistory.find(a => (a.aksi === 'rejected' || a.action === 'REJECTED'));
     if (rejectedRecord && rejectedRecord.step) {
       currentActiveStep = Number(rejectedRecord.step);
     }
   }
 
-  const sequentialSteps = [
-    {
-      step: 1,
-      title: 'Tahap 1: Verifikasi Atasan Langsung',
-      role: 'Atasan Langsung Unit Pemohon',
-      desc: 'Pemeriksaan fisik aset & kewajaran permohonan di unit asal.',
-      targetUserId: doc.data?.verifikator_1_id || (Array.isArray(chain) ? chain[0] : 3),
-      defaultName: 'Ahmad Fauzi Setiawan',
-      defaultRole: 'Asisten Manager TI',
-    },
-    {
-      step: 2,
-      title: 'Tahap 2: Validasi Teknis Pengelola TI',
-      role: 'Pengelola Aset TI',
-      desc: 'Sanitasi media storage, kelayakan degaussing & tag SAP.',
-      targetUserId: doc.data?.verifikator_2_id || (Array.isArray(chain) ? chain[1] : 1),
-      defaultName: 'Bambang Suryo Pratama',
-      defaultRole: 'Manager TI',
-    },
-    {
-      step: 3,
-      title: 'Tahap 3: Penyetuju Akhir (Head of Unit)',
-      role: 'Penyetuju Akhir / Head of Unit',
-      desc: 'Pengesahan Berita Acara & penandatanganan digital terpusat.',
-      targetUserId: doc.data?.verifikator_3_id || (Array.isArray(chain) ? chain[2] : 5),
-      defaultName: 'Raden Dwi Cahyono',
-      defaultRole: 'Vice President',
-    },
-  ];
+  const activeStepObj = sequentialSteps.find(s => s.step === currentActiveStep) || sequentialSteps[0];
+  const currentApproverName =
+    activeStepObj?.displayFull ||
+    currentApproverObj?.nama ||
+    currentApproverObj?.name ||
+    'Pejabat Verifikator';
 
-  // Helper resolusi nama pejabat yang presisi per tahapan
-  const getApproverDisplayForStep = (s) => {
-    // 1. Jika sudah disetujui atau ditolak, tampilkan penandatangan
-    const historyItem = approvalHistory.find(a => Number(a.step) === s.step);
-    if (historyItem && historyItem.aksi !== 'pending' && historyItem.action !== 'PENDING') {
-      const actorName = historyItem.approver?.nama || historyItem.approver?.name;
-      const actorJabatan = historyItem.approver?.jabatan?.nama || historyItem.approver?.jabatan?.name || historyItem.approver?.jabatan || '';
-      if (actorName) {
-        return actorJabatan ? `${actorName} (${actorJabatan})` : actorName;
-      }
-    }
-
-    // 2. Ambil dari master approvers list berdasarkan targetUserId yang dipilih pemohon
-    if (s.targetUserId && Array.isArray(approvers) && approvers.length > 0) {
-      const foundUser = approvers.find(u => Number(u.id) === Number(s.targetUserId));
-      if (foundUser) {
-        const uName = foundUser.nama || foundUser.name;
-        const uJab = foundUser.jabatan?.nama || foundUser.jabatan?.name || foundUser.jabatan || '';
-        return uJab ? `${uName} (${uJab})` : uName;
-      }
-    }
-
-    // 3. Fallback nama pejabat resmi
-    return `${s.defaultName} (${s.defaultRole})`;
-  };
-
-  const currentApproverObj = doc.current_approver || doc.currentApprover || doc.penyetuju;
-  const currentApproverName = currentApproverObj?.nama || currentApproverObj?.name || 'Pejabat Verifikator';
+  // Role check: izinkan pejabat yang sesuai giliran tahap aktif atau admin/super_admin
+  const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
+  const isCurrentApprover = Boolean(
+    user?.id && (
+      (doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)) ||
+      (activeStepObj?.targetUserId && Number(user.id) === Number(activeStepObj.targetUserId))
+    )
+  );
+  const canTakeAction = isPending && (isAdminOrSuper || isCurrentApprover);
 
   // Buka modal otorisasi e-Sign dengan input PIN
   const handleOpenApproveModal = () => {
@@ -295,7 +422,7 @@ export default function PemusnahanReviewPage({ user }) {
       });
 
       setIsPinModalOpen(false);
-      setSuccessMessage(res?.message || 'Dokumen berhasil disetujui dan dialirkan ke tahapan selanjutnya!');
+      setSuccessMessage(res?.message || 'Dokumen berhasil disetujui dan dialirkan ke tahapan selanjutnya sesuai pilihan pemohon!');
       
       // Reload document data
       setTimeout(() => {
@@ -338,8 +465,6 @@ export default function PemusnahanReviewPage({ user }) {
       setIsSubmitting(false);
     }
   };
-
-
 
   const handleDownloadPdf = () => {
     const pdfUrl = api.getDocumentPdfUrl(doc.id);
@@ -389,6 +514,18 @@ export default function PemusnahanReviewPage({ user }) {
             </button>
           )}
 
+          {isRejected && (
+            <button
+              type="button"
+              id="btn-top-revisi-pmh"
+              onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Formulir Revisi</span>
+            </button>
+          )}
+
           {(isApproved || isPending) && (
             <button
               onClick={handleDownloadPdf}
@@ -432,11 +569,16 @@ export default function PemusnahanReviewPage({ user }) {
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                 DSP-01: Permohonan
               </span>
+              {(doc.data?.is_revised || doc.data?.catatan_revisi) && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  Revisi #{doc.data?.revisi_ke || 1}
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
               <span>Diajukan pada: <strong>{new Date(doc.submitted_at || doc.created_at || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</strong></span>
               <span>•</span>
-              <span>Oleh: <strong>{doc.requester_name || doc.requester?.name || 'Petugas TI'}</strong></span>
+              <span>Oleh: <strong>{doc.requester_name || doc.requester?.name || doc.data?.nama_pemohon || 'Petugas TI'}</strong></span>
             </div>
           </div>
         </div>
@@ -445,7 +587,13 @@ export default function PemusnahanReviewPage({ user }) {
           <div className="text-right hidden sm:block">
             <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Status Dokumen Saat Ini</span>
             <span className="text-xs font-bold text-slate-800">
-              {isDraft ? 'Dokumen Berstatus Draf (Belum Diajukan)' : isApproved ? 'Telah Disetujui Penuh & Sah' : isRejected ? 'Ditolak / Perlu Revisi' : `Sedang di ${sequentialSteps[currentActiveStep - 1]?.title}`}
+              {isDraft
+                ? 'Dokumen Berstatus Draf (Belum Diajukan)'
+                : isApproved
+                ? 'Telah Disetujui Penuh & Sah'
+                : isRejected
+                ? 'Ditolak / Perlu Revisi'
+                : `Tahap ${currentActiveStep}: ${activeStepObj?.verifierName || 'Pejabat Verifikator'}`}
             </span>
           </div>
 
@@ -460,15 +608,93 @@ export default function PemusnahanReviewPage({ user }) {
               isPending ? 'bg-orange-500 animate-pulse' :
               isApproved ? 'bg-emerald-500' : 'bg-rose-500'
             }`}></span>
-            <span>{isDraft ? 'Draf Pengajuan' : (doc.status_label || (isPending ? `Tahap ${currentActiveStep}: Menunggu Disposisi` : isApproved ? 'Selesai Disetujui' : 'Ditolak'))}</span>
+            <span>
+              {isDraft
+                ? 'Draf Pengajuan'
+                : isPending
+                ? `Tahap ${currentActiveStep}: ${activeStepObj?.verifierName || 'Menunggu Disposisi'}`
+                : isApproved
+                ? 'Selesai Disetujui'
+                : 'Ditolak / Perlu Revisi'}
+            </span>
           </span>
         </div>
       </div>
 
+      {/* 3b. Banner Penolakan & Akses Cepat ke Formulir Revisi (jika dokumen berstatus rejected) */}
+      {isRejected && (
+        <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs animate-in fade-in">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
+              <XCircle className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-extrabold text-rose-950">
+                  Permohonan Ditolak pada {activeStepObj?.title || `Tahap ${currentActiveStep}`}
+                </h3>
+                <span className="px-2 py-0.5 bg-rose-200/80 text-rose-900 rounded text-[10px] font-bold">
+                  Oleh: {rejectedByActor}
+                </span>
+              </div>
+              <p className="text-xs text-rose-900 font-medium bg-white/80 px-3 py-2 rounded-lg border border-rose-200 mt-1">
+                <strong>Catatan Evaluasi / Alasan Penolakan:</strong> &ldquo;{rejectionReasonText || 'Rincian aset atau dokumen pendukung perlu diperbaiki sesuai standar tata kelola TI.'}&rdquo;
+              </p>
+              <p className="text-[11px] text-rose-700 pt-0.5">
+                Silakan buka <strong>Formulir Revisi Permohonan</strong> untuk memperbaiki data pengajuan dan mengirimkannya kembali ke alur persetujuan.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="btn-banner-revisi-pmh"
+            onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Buka Formulir Revisi Permohonan</span>
+          </button>
+        </div>
+      )}
+
       {/* 4. Main Split Layout: 8 Kolom (Dokumen & Aset) + 4 Kolom (Alur & Tindakan) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* === KOLOM KIRI (7/12 atau 8/12): DOKUMEN & RINCIAN ASET === */}
+        {/* === KOLOM KIRI (8/12): DOKUMEN & RINCIAN ASET === */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Riwayat Catatan Revisi Pemohon (jika dokumen merupakan hasil revisi) */}
+          {(doc.data?.catatan_revisi || (Array.isArray(doc.data?.kategori_revisi) && doc.data.kategori_revisi.length > 0)) && (
+            <section className="bg-blue-50/70 border border-blue-200 rounded-2xl p-5 space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#0b2046] uppercase tracking-wider">
+                  <RotateCcw className="w-4 h-4 text-blue-600" />
+                  <span>Keterangan Tindak Lanjut Revisi Pemohon {doc.data?.revisi_ke ? `(Revisi #${doc.data.revisi_ke})` : ''}</span>
+                </div>
+                {doc.data?.revised_at && (
+                  <span className="text-[11px] text-blue-700 font-medium">
+                    Diperbarui: {new Date(doc.data.revised_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
+
+              {Array.isArray(doc.data?.kategori_revisi) && doc.data.kategori_revisi.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {doc.data.kategori_revisi.map((kat, i) => (
+                    <span key={i} className="px-2.5 py-0.5 bg-white text-blue-800 border border-blue-200 rounded-md text-[10px] font-bold">
+                      ✓ {kat}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {doc.data?.catatan_revisi && (
+                <div className="text-xs text-slate-800 bg-white p-3 rounded-xl border border-blue-200 leading-relaxed">
+                  <strong>Catatan Perbaikan:</strong> {doc.data.catatan_revisi}
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Bagian 1: Identitas Pemohon & Klasifikasi */}
           <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
             <div className="border-l-4 border-[#0b2046] px-6 py-4 bg-white border-b border-slate-100 flex items-center justify-between">
@@ -486,10 +712,10 @@ export default function PemusnahanReviewPage({ user }) {
                 <div>
                   <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pemohon (Requester)</label>
                   <div className="font-extrabold text-slate-900 text-sm mt-0.5">
-                    {doc.requester_name || doc.requester?.name || 'Petugas Pengusul'}
+                    {doc.requester_name || doc.requester?.name || doc.data?.nama_pemohon || 'Petugas Pengusul'}
                   </div>
                   <div className="text-xs text-slate-500 font-mono mt-0.5">
-                    NIP: {doc.requester_nip || doc.requester?.nip || '100001'}
+                    NIP: {doc.requester_nip || doc.requester?.nip || doc.data?.nip_pemohon || '100001'}
                   </div>
                 </div>
 
@@ -619,17 +845,22 @@ export default function PemusnahanReviewPage({ user }) {
           </section>
         </div>
 
-        {/* === KOLOM KANAN (4/12 atau 5/12): STICKY WORKFLOW & ACTION PANEL === */}
+        {/* === KOLOM KANAN (4/12): STICKY WORKFLOW & ACTION PANEL === */}
         <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-6">
-          {/* Card 1: Alur Persetujuan Berjenjang (Sekuensial 1 ➔ 2 ➔ 3) */}
+          {/* Card 1: Alur Persetujuan Berjenjang (Sekuensial Sesuai Pilihan Pemohon) */}
           <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-            <div className="border-l-4 border-emerald-600 px-5 py-3.5 bg-white border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-xs font-bold text-[#0b2046] uppercase tracking-wider flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-emerald-600" />
-                Alur Persetujuan Berjenjang
-              </h3>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                Wajib Berurutan
+            <div className="border-l-4 border-emerald-600 px-5 py-3.5 bg-white border-b border-slate-100 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-[#0b2046] uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Alur Persetujuan Berjenjang</span>
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Pejabat verifikator sesuai pilihan pemohon
+                </p>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0">
+                Pilihan Pemohon
               </span>
             </div>
 
@@ -639,9 +870,6 @@ export default function PemusnahanReviewPage({ user }) {
                 const isStepApproved = isApproved || (existingAppr && (existingAppr.action === 'APPROVED' || existingAppr.aksi === 'approved'));
                 const isStepRejected = existingAppr && (existingAppr.action === 'REJECTED' || existingAppr.aksi === 'rejected');
                 const isStepCurrentActive = isPending && s.step === currentActiveStep;
-                const isStepLocked = !isApproved && s.step > currentActiveStep;
-
-                const approverNameDisplay = getApproverDisplayForStep(s);
 
                 return (
                   <div 
@@ -650,7 +878,7 @@ export default function PemusnahanReviewPage({ user }) {
                       isStepApproved ? 'bg-emerald-50/50 border-emerald-200' :
                       isStepRejected ? 'bg-rose-50/50 border-rose-200' :
                       isStepCurrentActive ? 'bg-white border-blue-400 shadow-xs ring-2 ring-blue-100' :
-                      'bg-slate-50/80 border-slate-200 opacity-70'
+                      'bg-slate-50/80 border-slate-200 opacity-75'
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
@@ -690,11 +918,19 @@ export default function PemusnahanReviewPage({ user }) {
                           </span>
                         </div>
 
-                        <div className="text-[11px] font-semibold text-slate-800 mt-1 truncate">
-                          {approverNameDisplay}
+                        <div className="text-[11px] font-bold text-[#0b2046] mt-1 truncate">
+                          {s.displayFull}
                         </div>
 
-                        <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
+                        {(s.verifierNip || s.verifierUnit) && (
+                          <div className="text-[10px] text-slate-500 font-medium truncate">
+                            {s.verifierNip ? `NIP: ${s.verifierNip}` : ''}
+                            {s.verifierNip && s.verifierUnit ? ' • ' : ''}
+                            {s.verifierUnit || ''}
+                          </div>
+                        )}
+
+                        <p className="text-[10px] text-slate-500 mt-1 leading-snug">
                           {existingAppr?.catatan || existingAppr?.note
                             ? `"${existingAppr.catatan || existingAppr.note}"`
                             : s.desc}
@@ -844,7 +1080,7 @@ export default function PemusnahanReviewPage({ user }) {
                         Otorisasi Terkunci (Menunggu Giliran)
                       </h4>
                       <p className="text-[11px] text-amber-800/90 mt-1 leading-relaxed">
-                        Dokumen ini saat ini sedang dalam proses review pada <strong>{sequentialSteps[currentActiveStep - 1]?.title} oleh {currentApproverName}</strong>. Anda baru dapat mengambil keputusan setelah tahapan tersebut selesai disetujui.
+                        Dokumen ini saat ini sedang dalam proses review pada <strong>{activeStepObj?.title || `Tahap ${currentActiveStep}`} oleh {currentApproverName}</strong>. Anda baru dapat mengambil keputusan setelah tahapan tersebut selesai disetujui.
                       </p>
                     </div>
                   </div>
@@ -856,7 +1092,7 @@ export default function PemusnahanReviewPage({ user }) {
                     <span>Dokumen Disetujui Penuh & Sah</span>
                   </div>
                   <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    Seluruh 3 jenjang verifikasi telah selesai dilaksanakan. Dokumen Permohonan Pemusnahan Aset [DSP-01] telah resmi disetujui dan ditandatangani secara digital.
+                    Seluruh jenjang verifikasi sesuai pilihan pemohon telah selesai dilaksanakan. Dokumen Permohonan Pemusnahan Aset [DSP-01] telah resmi disetujui dan ditandatangani secara digital.
                   </p>
                   <button
                     onClick={handleDownloadPdf}
@@ -867,14 +1103,28 @@ export default function PemusnahanReviewPage({ user }) {
                   </button>
                 </div>
               ) : (
-                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-rose-900">
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3 text-rose-900">
                   <div className="flex items-center gap-2 font-bold text-xs">
                     <XCircle className="w-4 h-4 text-rose-600" />
-                    <span>Dokumen Ditolak / Berhenti</span>
+                    <span>Dokumen Ditolak / Memerlukan Revisi</span>
                   </div>
+                  {rejectionReasonText && (
+                    <div className="p-2.5 bg-white/90 border border-rose-200 rounded-lg text-[11px] text-rose-950 italic">
+                      <strong>Alasan Penolakan:</strong> &ldquo;{rejectionReasonText}&rdquo;
+                    </div>
+                  )}
                   <p className="text-[11px] text-rose-800 leading-relaxed">
-                    Pengajuan pemusnahan aset ini telah ditolak oleh pejabat otorisator. Pemohon dipersilakan melakukan revisi usulan baru.
+                    Pengajuan permohonan pemusnahan aset ini telah ditolak oleh pejabat otorisator. Silakan perbaiki data usulan melalui Formulir Revisi untuk diajukan kembali.
                   </p>
+                  <button
+                    type="button"
+                    id="btn-sidebar-revisi-pmh"
+                    onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
+                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Buka Formulir Revisi Permohonan</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -882,7 +1132,6 @@ export default function PemusnahanReviewPage({ user }) {
         </div>
       </div>
 
-      {/* === MODAL 1: VALIDASI PIN OTORISASI E-SIGN === */}
       {/* === MODAL AUTENTIKASI PIN OTORISASI E-SIGN === */}
       {isPinModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
