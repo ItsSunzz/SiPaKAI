@@ -230,4 +230,60 @@ export const api = {
       method: 'DELETE',
     })
   },
+
+  // Super Admin: manajemen user & activity log
+  async getUserStats() {
+    return request('/users/stats')
+  },
+
+  async getUsers(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/users${query ? `?${query}` : ''}`)
+  },
+
+  async createUser(payload) {
+    return request('/users', { method: 'POST', body: payload })
+  },
+
+  async updateUser(id, payload) {
+    return request(`/users/${id}`, { method: 'PUT', body: payload })
+  },
+
+  async deactivateUser(id) {
+    return request(`/users/${id}`, { method: 'DELETE' })
+  },
+
+  async getActivityLogs(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/activity-logs${query ? `?${query}` : ''}`)
+  },
+
+  async getActivityLogActions() {
+    return request('/activity-logs/actions')
+  },
+
+  // Notifications
+  async getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/notifications${query ? `?${query}` : ''}`)
+  },
+
+  async markNotificationRead(id) {
+    return request(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    })
+  },
+
+  async markAllNotificationsRead() {
+    return request('/notifications/read-all', {
+      method: 'POST',
+    })
+  },
+
+  async deleteNotification(id) {
+    return request(`/notifications/${id}`, {
+      method: 'DELETE',
+    })
+  },
 }
+

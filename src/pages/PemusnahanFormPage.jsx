@@ -169,6 +169,7 @@ export default function PemusnahanFormPage({ user }) {
 
       const res = await api.createDocument(payload);
       setSubmitSuccess(res.message || 'Permohonan pemusnahan aset berhasil disimpan dan dialirkan ke verifikator!');
+      window.dispatchEvent(new Event('sipakai:notification_refresh'));
 
       setTimeout(() => {
         navigate('/pemusnahan');
