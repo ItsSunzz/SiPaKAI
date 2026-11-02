@@ -18,6 +18,13 @@ import {
 } from 'lucide-react'
 import { api, fallbackDocuments } from '../services/api'
 
+const formatJabatanText = (jabatan) => {
+  if (!jabatan) return ''
+  if (typeof jabatan === 'string') return jabatan
+  if (typeof jabatan === 'object') return jabatan.nama || jabatan.name || jabatan.kode || ''
+  return String(jabatan)
+}
+
 export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user }) {
   const [actionType, setActionType] = useState('approve')
   const [notes, setNotes] = useState('')
@@ -28,14 +35,14 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
 
-  // Fetch full details of the document and approvers
+  // Fetch full details of the document and all approvers
   useEffect(() => {
     async function loadData() {
       if (!doc?.id) return;
       
-      // Load approvers for forwarding
+      // Load all approvers (all=1) for resolving chosen verifiers
       try {
-        const aRes = await api.getApprovers();
+        const aRes = await api.getApprovers('all=1').catch(() => api.getApprovers());
         const aList = Array.isArray(aRes) ? aRes : (aRes?.data || []);
         setApprovers(aList);
         if (aList.length > 0) setNextApproverId(String(aList[0].id));
@@ -92,9 +99,9 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
   if (doc?.type === 'ho01' || doc?.type === 'ho02' || doc?.category_type === 'bast') return null;
 
   const activeDoc = docDetail || doc;
-  const isPending = activeDoc.status === 'in_review';
+  const isPending = activeDoc.status === 'in_review' || activeDoc.status === 'pending';
   const isApproved = activeDoc.status === 'approved';
-  const isRejected = activeDoc.status === 'rejected';
+  const isRejected = activeDoc.status === 'rejected' || activeDoc.status === 'ditolak';
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -176,16 +183,16 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
               <div>
                 <span className="text-slate-400 block text-[11px] font-medium">Pemohon (Requester):</span>
                 <span className="font-bold text-slate-900 mt-0.5 block">
-                  {activeDoc.requester_name || activeDoc.requester?.name || activeDoc.requester?.nama || 'Petugas TI'}
+                  {activeDoc.requester_name || activeDoc.requester?.name || activeDoc.requester?.nama || activeDoc.data?.nama_pemohon || 'Petugas TI'}
                 </span>
                 <span className="text-[10px] text-slate-500 font-mono">
-                  NIP: {activeDoc.requester?.nip || activeDoc.requester_nip || '62489'}
+                  NIP: {activeDoc.requester?.nip || activeDoc.requester_nip || activeDoc.data?.nip_pemohon || '62489'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[11px] font-medium">Unit Kerja Pengusul:</span>
                 <span className="font-semibold text-slate-800 mt-0.5 block">
-                  {typeof activeDoc.requester?.jabatan === 'object' ? activeDoc.requester?.jabatan?.nama : (activeDoc.requester?.jabatan || activeDoc.requester_unit || 'DAOP 1 Jakarta')}
+                  {typeof activeDoc.requester?.jabatan === 'object' ? activeDoc.requester?.jabatan?.nama : (activeDoc.requester?.jabatan || activeDoc.requester_unit || activeDoc.data?.unit_kerja || 'DAOP 1 Jakarta')}
                 </span>
               </div>
               <div>
@@ -248,25 +255,40 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
             </div>
           </div>
 
-          {/* Section 3: Riwayat Alur Persetujuan Sekuensial Berjenjang */}
+          {/* Section 3: Riwayat Alur Persetujuan Sekuensial Berjenjang (Sesuai Pilihan Pemohon) */}
           <div>
-            <div className="flex items-center justify-between mb-2 hidden">
+            <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                 <Clock className="w-4 h-4 text-blue-600" />
-                Alur Persetujuan Berjenjang (Sekuensial 1 ➔ 2 ➔ 3)
+                Alur Persetujuan Berjenjang (Sesuai Pilihan Pemohon)
               </h4>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                Wajib Berurutan
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                Wajib Berurutan (Tahap 1 ➔ 2 ➔ 3)
               </span>
             </div>
 
             {(() => {
               const approvalHistory = activeDoc.approvals || activeDoc.persetujuan || [];
-              const chain = activeDoc.data?.approval_chain || [
-                activeDoc.data?.verifikator_1_id,
-                activeDoc.data?.verifikator_2_id,
-                activeDoc.data?.verifikator_3_id,
-              ].filter(Boolean);
+              const dData = activeDoc.data || {};
+
+              let localSavedEntry = null;
+              try {
+                const storedMap = JSON.parse(localStorage.getItem('sipakai_dsp01_approvers') || '{}');
+                localSavedEntry =
+                  storedMap[String(activeDoc.id)] ||
+                  (activeDoc.number ? storedMap[String(activeDoc.number)] : null) ||
+                  (activeDoc.nomor ? storedMap[String(activeDoc.nomor)] : null);
+              } catch (e) {}
+
+              const chain = (Array.isArray(dData.approval_chain) && dData.approval_chain.length > 0)
+                ? dData.approval_chain
+                : (Array.isArray(localSavedEntry?.approval_chain) && localSavedEntry.approval_chain.length > 0)
+                ? localSavedEntry.approval_chain
+                : [
+                    dData.verifikator_1_id || dData.verifikator_1?.id || localSavedEntry?.verifikator_1_id || localSavedEntry?.v1?.id,
+                    dData.verifikator_2_id || dData.verifikator_2?.id || localSavedEntry?.verifikator_2_id || localSavedEntry?.v2?.id,
+                    dData.verifikator_3_id || dData.verifikator_3?.id || localSavedEntry?.verifikator_3_id || localSavedEntry?.v3?.id,
+                  ].filter(Boolean);
 
               let currentActiveStep = 1;
               if (Array.isArray(chain) && chain.length > 0 && activeDoc.penyetuju_id) {
@@ -274,50 +296,83 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
                 if (idx !== -1) currentActiveStep = idx + 1;
               } else {
                 const pendingRecord = approvalHistory.find(a => (a.aksi === 'pending' || a.action === 'PENDING'));
-                if (pendingRecord) currentActiveStep = pendingRecord.step || 1;
+                if (pendingRecord) currentActiveStep = Number(pendingRecord.step) || 1;
               }
+
+              const resolveStep = (stepNum, defaultName, defaultRole) => {
+                const existingAppr = approvalHistory.find(a => Number(a.step) === stepNum);
+                const dataObj = dData[`verifikator_${stepNum}`] || localSavedEntry?.[`v${stepNum}`];
+                const targetId =
+                  dData[`verifikator_${stepNum}_id`] ||
+                  dataObj?.id ||
+                  localSavedEntry?.[`verifikator_${stepNum}_id`] ||
+                  chain[stepNum - 1] ||
+                  existingAppr?.approver_id ||
+                  existingAppr?.approver?.id;
+
+                const foundUser = targetId ? approvers.find(u => Number(u.id) === Number(targetId)) : null;
+
+                const name =
+                  (existingAppr && existingAppr.aksi !== 'pending' && existingAppr.action !== 'PENDING' && (existingAppr.approver?.nama || existingAppr.approver?.name)) ||
+                  dData[`verifikator_${stepNum}_nama`] ||
+                  dataObj?.name ||
+                  dataObj?.nama ||
+                  foundUser?.nama ||
+                  foundUser?.name ||
+                  existingAppr?.approver?.nama ||
+                  existingAppr?.approver?.name ||
+                  defaultName;
+
+                const jabatan =
+                  dData[`verifikator_${stepNum}_jabatan`] ||
+                  formatJabatanText(dataObj?.jabatan) ||
+                  formatJabatanText(foundUser?.jabatan) ||
+                  formatJabatanText(existingAppr?.approver?.jabatan) ||
+                  defaultRole;
+
+                return {
+                  targetId,
+                  name,
+                  jabatan,
+                  displayFull: jabatan ? `${name} (${jabatan})` : name,
+                };
+              };
+
+              const s1 = resolveStep(1, 'Ahmad Fauzi Setiawan', 'Asisten Manager TI');
+              const s2 = resolveStep(2, 'Bambang Suryo Pratama', 'Manager TI');
+              const s3 = resolveStep(3, 'Raden Dwi Cahyono', 'Vice President');
 
               const sequentialSteps = [
                 {
                   step: 1,
                   title: 'Tahap 1: Verifikasi Atasan Langsung',
-                  role: 'Atasan Langsung Unit Pemohon',
+                  role: s1.jabatan || 'Atasan Langsung Unit Pemohon',
                   desc: 'Pemeriksaan awal fisik aset & kewajaran permohonan',
+                  approverNameDisplay: s1.displayFull,
                 },
                 {
                   step: 2,
                   title: 'Tahap 2: Validasi Teknis TI',
-                  role: 'Pengelola Aset TI',
+                  role: s2.jabatan || 'Pengelola Aset TI',
                   desc: 'Sanitasi media storage, kelayakan degaussing & tag SAP',
+                  approverNameDisplay: s2.displayFull,
                 },
                 {
                   step: 3,
                   title: 'Tahap 3: Penyetuju Akhir',
-                  role: 'Penyetuju Akhir (Head of Unit)',
+                  role: s3.jabatan || 'Penyetuju Akhir (Head of Unit)',
                   desc: 'Pengesahan Berita Acara & tanda tangan digital terpusat',
+                  approverNameDisplay: s3.displayFull,
                 },
               ];
 
               return (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4.5 space-y-3.5">
                   {sequentialSteps.map((s) => {
-                    const existingAppr = approvalHistory.find(a => a.step === s.step);
-                    const isStepApproved = existingAppr && (existingAppr.action === 'APPROVED' || existingAppr.aksi === 'approved');
+                    const existingAppr = approvalHistory.find(a => Number(a.step) === s.step);
+                    const isStepApproved = isApproved || (existingAppr && (existingAppr.action === 'APPROVED' || existingAppr.aksi === 'approved'));
                     const isStepRejected = existingAppr && (existingAppr.action === 'REJECTED' || existingAppr.aksi === 'rejected');
                     const isStepCurrentActive = isPending && s.step === currentActiveStep;
-                    const isStepLocked = isPending && s.step > currentActiveStep;
-
-                    // Nama approver yang tercatat atau fallback
-                    let approverNameDisplay = existingAppr?.approver?.name || existingAppr?.approver?.nama;
-                    if (!approverNameDisplay) {
-                      if (isStepCurrentActive) {
-                        approverNameDisplay = activeDoc.current_approver?.nama || activeDoc.currentApprover?.nama || activeDoc.penyetuju?.nama;
-                      }
-                      if (!approverNameDisplay) {
-                        approverNameDisplay = s.step === 1 ? 'Ahmad Fauzi Setiawan (Asmen TI)' :
-                          s.step === 2 ? 'Bambang Suryo Pratama (Manager TI)' : 'Dra. Siti Rahmawati, M.M.';
-                      }
-                    }
 
                     return (
                       <div 
@@ -371,7 +426,7 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
                           </div>
 
                           <div className="text-[11px] font-semibold text-slate-800 mt-1">
-                            Pejabat: {approverNameDisplay}
+                            Pejabat: {s.approverNameDisplay}
                           </div>
 
                           <p className="text-[11px] text-slate-500 mt-0.5">
@@ -396,7 +451,7 @@ export default function ReviewModal({ doc, onClose, onAction, isSubmitting, user
 
             if (!canTakeAction) {
               const currentApproverObj = activeDoc.current_approver || activeDoc.currentApprover || activeDoc.penyetuju;
-              const approverName = currentApproverObj?.nama || currentApproverObj?.name || 'Verifikator Tahap Terkait';
+              const approverName = currentApproverObj?.nama || currentApproverObj?.name || activeDoc.current_approver_name || 'Verifikator Tahap Terkait';
               return (
                 <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4.5 flex items-start gap-3">
                   <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />

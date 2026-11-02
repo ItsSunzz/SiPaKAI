@@ -351,12 +351,15 @@ function AppContent() {
           <Route path="pemusnahan/:id/review" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/:id/edit" element={<PemusnahanFormPage user={userProfile} />} />
+          <Route path="pemusnahan/:id/revisi" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="pemusnahan/create" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="pemusnahan/permohonan/create" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="pemusnahan/permohonan/:id/edit" element={<PemusnahanFormPage user={userProfile} />} />
+          <Route path="pemusnahan/permohonan/:id/revisi" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="dsp01" element={<PemusnahanListPage user={userProfile} onReviewDocument={handleReviewDocument} onViewDocument={handleViewDocument} />} />
           <Route path="dsp01/create" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="dsp01/:id/edit" element={<PemusnahanFormPage user={userProfile} />} />
+          <Route path="dsp01/:id/revisi" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="dsp01/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           {/* Berita Acara Pemusnahan (DSP-02) */}
           <Route path="berita-acara-pemusnahan" element={<BaPemusnahanListPage user={userProfile} />} />
