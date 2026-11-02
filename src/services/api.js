@@ -115,7 +115,7 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
-  // Auth
+    // Auth
   async login(nip, password, role = null) {
     const data = await request('/auth/login', {
       method: 'POST',
@@ -234,13 +234,6 @@ export const api = {
     return await res.blob();
   },
 
-  getDocumentPdfUrl(id, inline = true, template = null) {
-    const token = getToken();
-    const inlineParam = inline ? '&inline=1' : '';
-    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
-    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}${templateParam}`;
-  },
-
   async uploadPhysicalScan(id, formData) {
     const token = getToken();
     const res = await fetch(`${API_BASE_URL}/documents/${id}/physical-scan`, {
@@ -256,6 +249,37 @@ export const api = {
       throw new Error(json.message || 'Gagal mengunggah berkas scan fisik.');
     }
     return json;
+  },
+  getDocumentPdfUrl(id, inline = true, template = null) {
+    const token = getToken();
+    const inlineParam = inline ? '&inline=1' : '';
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}${templateParam}`;
+  },
+
+
+  async downloadDocumentPdf(id, filename) {
+    // Download PDF yang benar menggunakan Authorization header (Sanctum auth)
+    const token = getToken()
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf`, {
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.message || `Gagal mengunduh PDF: HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `dokumen-${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   // Approvers list
@@ -339,6 +363,38 @@ export const api = {
   },
 
   // Notifikasi
+  // Super Admin: manajemen user & activity log
+  async getUserStats() {
+    return request('/users/stats')
+  },
+
+  async getUsers(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/users${query ? `?${query}` : ''}`)
+  },
+
+  async createUser(payload) {
+    return request('/users', { method: 'POST', body: payload })
+  },
+
+  async updateUser(id, payload) {
+    return request(`/users/${id}`, { method: 'PUT', body: payload })
+  },
+
+  async deactivateUser(id) {
+    return request(`/users/${id}`, { method: 'DELETE' })
+  },
+
+  async getActivityLogs(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/activity-logs${query ? `?${query}` : ''}`)
+  },
+
+  async getActivityLogActions() {
+    return request('/activity-logs/actions')
+  },
+
+  // Notifications
   async getNotifications(params = {}) {
     const query = new URLSearchParams(params).toString()
     return request(`/notifications${query ? `?${query}` : ''}`)
@@ -356,9 +412,16 @@ export const api = {
     })
   },
 
+  async markAllNotificationsRead() {
+    return this.markAllNotificationsAsRead()
+  },
+
   async deleteNotification(id) {
     return request(`/notifications/${id}`, {
       method: 'DELETE',
     })
-  },
+  }
+
 }
+
+export default api;

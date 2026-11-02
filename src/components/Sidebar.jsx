@@ -1,45 +1,87 @@
 import { useState } from 'react'
 import {
-  LayoutDashboard,
-  Trash2,
-  FileCheck2,
+  LayoutGrid,
+  FileX2,
+  Handshake,
+  User,
+  History,
   Settings,
   LogOut,
   ChevronDown,
-  ChevronRight,
-  ShieldAlert,
 } from 'lucide-react'
 
-export default function Sidebar({ activeMenu, onSelectMenu, currentRole }) {
-  const [openPemusnahan, setOpenPemusnahan] = useState(false)
-  const [openBast, setOpenBast] = useState(false)
+const PEMUSNAHAN_ITEMS = [
+  { id: 'dsp01', label: 'Permohonan Pemusnahan' },
+  { id: 'dsp02', label: 'Berita Acara Pemusnahan' },
+  { id: 'dsp03', label: 'Penghapusan Aset TI' },
+]
+const BAST_ITEMS = [
+  { id: 'ho01', label: 'BAST Barang (HO-01)' },
+  { id: 'ho02', label: 'BAST User Aplikasi (HO-02)' },
+]
+
+export default function Sidebar({ activeMenu, onSelectMenu, onLogout, currentRole }) {
+  const [openPemusnahan, setOpenPemusnahan] = useState(activeMenu.startsWith('dsp'))
+  const [openBast, setOpenBast] = useState(activeMenu.startsWith('ho'))
+
+  const item = (active) =>
+    `w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-[13px] font-medium transition-colors ${
+      active ? 'bg-[#a8390a] text-white' : 'text-slate-200 hover:bg-white/10'
+    }`
+
+  const Leaf = ({ id, icon: Icon, label }) => (
+    <button type="button" onClick={() => onSelectMenu(id)} className={item(activeMenu === id)}>
+      <Icon className="w-4 h-4" />
+      <span>{label}</span>
+    </button>
+  )
+
+  const Group = ({ icon: Icon, label, open, setOpen, items, activePrefix }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`${item(false)} justify-between ${activeMenu.startsWith(activePrefix) ? 'text-white' : ''}`}
+      >
+        <span className="flex items-center gap-3">
+          <Icon className="w-4 h-4" />
+          <span>{label}</span>
+        </span>
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="ml-7 mt-1 space-y-0.5 border-l border-white/10 pl-3">
+          {items.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => onSelectMenu(it.id)}
+              className={`w-full text-left text-[12px] px-2 py-1.5 rounded ${
+                activeMenu === it.id ? 'text-white font-semibold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 
   return (
-    <aside className="w-64 bg-[#0a192f] text-slate-300 min-h-screen flex flex-col justify-between shrink-0 select-none border-r border-slate-800">
+    <aside className="w-[220px] bg-[#0b2046] text-slate-200 min-h-screen flex flex-col justify-between shrink-0 select-none">
       <div>
-        {/* Brand Header */}
-        <div className="p-5 flex items-center gap-3 border-b border-slate-800/80">
-          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center p-1 shadow-sm">
-            <svg viewBox="0 0 100 60" className="w-8 h-8">
-              <path d="M10 45 L35 15 L50 15 L25 45 Z" fill="#003580" />
-              <path d="M35 45 L60 15 L75 15 L50 45 Z" fill="#EE7623" />
-              <path d="M60 45 L85 15 L95 15 L70 45 Z" fill="#003580" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-white text-base font-bold tracking-tight leading-none">
-              KAI TI ASET
-            </h1>
-            <p className="text-[11px] text-slate-400 font-medium mt-1">Sistem Sentral</p>
+        {/* Brand */}
+        <div className="px-5 py-4 flex items-center gap-2.5 border-b border-white/10">
+          <span className="text-2xl font-black italic tracking-tighter text-white leading-none">KAI</span>
+          <div className="leading-tight">
+            <p className="text-white text-[11px] font-bold">KAI TI ASET</p>
+            <p className="text-slate-400 text-[10px]">Sistem Sentral</p>
           </div>
         </div>
 
-        {/* Navigation List */}
-        <div className="px-4 py-5">
-          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider px-3 mb-2">
-            Menu Navigasi
-          </p>
-
+        <div className="px-3 py-5">
+          <p className="text-[9px] uppercase font-semibold text-slate-400 tracking-wider px-3 mb-3">Menu Navigasi</p>
           <nav className="space-y-1">
             <button
               type="button"
@@ -183,22 +225,44 @@ export default function Sidebar({ activeMenu, onSelectMenu, currentRole }) {
               <Settings className="w-4 h-4" />
               <span>Pengaturan</span>
             </button>
+            <Leaf id="beranda" icon={LayoutGrid} label="Beranda" />
+            <Group
+              icon={FileX2}
+              label="Pemusnahan & Penghapusan"
+              open={openPemusnahan}
+              setOpen={setOpenPemusnahan}
+              items={PEMUSNAHAN_ITEMS}
+              activePrefix="dsp"
+            />
+            <Group
+              icon={Handshake}
+              label="Serah Terima (BAST)"
+              open={openBast}
+              setOpen={setOpenBast}
+              items={BAST_ITEMS}
+              activePrefix="ho"
+            />
+            {currentRole === 'super_admin' && (
+              <>
+                <Leaf id="pengguna" icon={User} label="Manajemen Pengguna" />
+                <Leaf id="log-aktivitas" icon={History} label="Log Aktivitas" />
+              </>
+            )}
+            <Leaf id="pengaturan" icon={Settings} label="Pengaturan" />
           </nav>
         </div>
       </div>
 
-      {/* Bottom Footer Section */}
-      <div className="p-4 border-t border-slate-800/80">
+      <div className="px-5 py-4">
         <button
           type="button"
-          onClick={() => alert('Sesi keluar. Silakan login kembali.')}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-400 hover:text-rose-400 hover:bg-slate-800/40 rounded-lg transition-colors"
+          onClick={onLogout}
+          className="flex items-center gap-2 text-[12px] text-slate-300 hover:text-rose-300 transition-colors"
         >
           <LogOut className="w-4 h-4" />
-          <span>Keluar Sistem</span>
+          Keluar Sistem
         </button>
-
-        <div className="mt-4 pt-3 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-800/40">
+        <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
           <span>v2.4.0-daop</span>
           <span>KAI TI © 2024</span>
         </div>

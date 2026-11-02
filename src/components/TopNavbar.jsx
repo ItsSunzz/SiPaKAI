@@ -23,7 +23,7 @@ export default function TopNavbar({ currentRole, onLogout, user }) {
 
       {/* Right User Bar */}
       <div className="flex items-center gap-5">
-        {/* Notification Bell Dropdown */}
+        {/* Dynamic Notification Bell with Popover Dropdown */}
         <NotificationDropdown />
 
         {/* User Profile */}

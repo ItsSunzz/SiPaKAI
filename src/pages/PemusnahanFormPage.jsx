@@ -148,14 +148,15 @@ export default function PemusnahanFormPage({ user }) {
     if (!id) return null;
     const appr = approvers.find(u => String(u.id) === String(id));
     if (!appr) return null;
-    const jab = typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || 'Pejabat Otorisator');
+    const displayName = appr.name || appr.nama || 'Pejabat Otorisator';
+    const jab = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat Otorisator';
     return {
       id: appr.id,
-      name: appr.name || appr.nama,
-      nip: appr.nip,
+      name: displayName,
+      nip: appr.nip || '-',
       jabatan: jab,
       unit_kerja: appr.unit_kerja || 'Unit Kantor Pusat',
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(appr.name || appr.nama)}&background=0b2046&color=fff`,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=0b2046&color=fff`,
     };
   };
 
@@ -248,6 +249,7 @@ export default function PemusnahanFormPage({ user }) {
       } else {
         resDoc = await api.createDocument(payload);
       }
+      window.dispatchEvent(new Event('sipakai:notification_refresh'));
 
       const createdDocId = resDoc?.document?.id || resDoc?.id || id;
 
@@ -682,10 +684,11 @@ export default function PemusnahanFormPage({ user }) {
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
-                          const jName = typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || 'Pejabat');
+                          const displayName = appr.name || appr.nama || 'Pejabat';
+                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
                           return (
                             <option key={appr.id} value={appr.id}>
-                              {appr.name || appr.nama} — {jName} ({appr.unit_kerja})
+                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
                             </option>
                           );
                         })}
@@ -752,10 +755,11 @@ export default function PemusnahanFormPage({ user }) {
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
-                          const jName = typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || 'Pejabat');
+                          const displayName = appr.name || appr.nama || 'Pejabat';
+                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
                           return (
                             <option key={appr.id} value={appr.id}>
-                              {appr.name || appr.nama} — {jName} ({appr.unit_kerja})
+                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
                             </option>
                           );
                         })}
@@ -822,10 +826,11 @@ export default function PemusnahanFormPage({ user }) {
                       >
                         <option value="">-- Pilih Pejabat --</option>
                         {approvers.map((appr) => {
-                          const jName = typeof appr.jabatan === 'object' ? appr.jabatan?.nama : (appr.jabatan || 'Pejabat');
+                          const displayName = appr.name || appr.nama || 'Pejabat';
+                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
                           return (
                             <option key={appr.id} value={appr.id}>
-                              {appr.name || appr.nama} — {jName} ({appr.unit_kerja})
+                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
                             </option>
                           );
                         })}
