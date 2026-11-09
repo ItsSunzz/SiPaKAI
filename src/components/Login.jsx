@@ -1,208 +1,291 @@
-import React, { useState } from 'react';
-import { HelpCircle, IdCard, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Train } from 'lucide-react';
-import { api } from '../services/api';
-import heroImg from '../assets/hero.png'; // Assuming hero.png is the image in the screenshot
+
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+import Header from './Header'
+import {
+  IdCard,
+  Lock,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  Train,
+  UserRoundPlus,
+  BookUser,
+} from 'lucide-react'
+import { api } from '../services/api'
 
 export default function Login({ onLoginSuccess, onGuestBook, onRegister }) {
-  const [nip, setNip] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const navigate = useNavigate()
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-    
+    e.preventDefault()
+    setError('')
+    setIsLoading(true)
+
     try {
-      const res = await api.login(nip, password);
-      onLoginSuccess(res.user, res.token);
+      const res = await api.login(identifier, password)
+      onLoginSuccess(res.user, res.token)
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Login gagal. Periksa kembali NIPP dan kata sandi Anda.');
+      setError(
+        err.response?.data?.message ||
+        err.message ||
+        'Login gagal. Periksa kembali Email/NIPP dan kata sandi Anda.'
+      )
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* Header */}
-      <header className="w-full bg-white px-8 py-4 flex items-center justify-between border-b border-slate-100">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-[#0b2046] rounded-xl flex items-center justify-center text-white shrink-0">
-            <Train className="w-7 h-7" />
-          </div>
-          <div className="flex flex-col">
-            <h1 className="font-bold text-[#0b2046] text-lg leading-tight">PT Kereta Api Indonesia (Persero)</h1>
-            <p className="text-slate-500 text-sm">Sistem Manajemen Aset & Fasilitas TI</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-6 text-sm text-slate-500">
-          <button className="flex items-center gap-2 hover:text-[#0b2046] transition-colors">
-            <HelpCircle className="w-4 h-4" /> Bantuan
-          </button>
-          <span className="w-px h-4 bg-slate-300"></span>
-          <button className="hover:text-[#0b2046] transition-colors">
-            Tentang Sistem
-          </button>
-        </div>
-      </header>
+    <div className="h-[100svh] min-h-0 flex flex-col overflow-hidden bg-[#f3f5f9] font-sans">
 
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] flex flex-col md:flex-row w-full max-w-[1100px] overflow-hidden min-h-[600px]">
-          
-          {/* Left Column - Image & Banner */}
-          <div className="hidden md:flex md:w-1/2 relative bg-slate-200">
-            {/* The actual image from the screenshot shows a train station */}
-            <img 
-              src={heroImg} 
-              alt="Kereta Cepat Whoosh" 
-              className="absolute inset-0 w-full h-full object-cover"
-              onError={(e) => {
-                e.target.src = 'https://images.unsplash.com/photo-1541427468627-a89a96e5ca1d?q=80&w=2070&auto=format&fit=crop';
-              }}
-            />
-            {/* Overlay Gradient */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0b2046]/90 via-[#0b2046]/40 to-transparent"></div>
-            
-            {/* Overlay Content */}
-            <div className="absolute bottom-0 left-0 w-full p-10 flex flex-col gap-3">
-              <span className="bg-[#f05a22] text-white text-[10px] font-bold tracking-wider px-3 py-1 rounded-sm w-fit uppercase">
-                Enterprise Asset Platform
-              </span>
-              <h2 className="text-white text-3xl font-bold leading-tight">
-                Digitalisasi Sarana & Infrastruktur TI Terintegrasi
-              </h2>
-              <p className="text-slate-200 text-sm mt-1 leading-relaxed">
-                Mendukung keandalan data, pemeliharaan aset, dan efisiensi operasional perkeretaapian nasional.
-              </p>
+      <Header />
+
+      {/* MAIN */}
+      <main className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-4 lg:p-5">
+        <div className="w-full max-w-6xl h-full max-h-[760px] min-h-0 bg-white rounded-2xl lg:rounded-[26px] overflow-hidden shadow-xl shadow-slate-300/40 grid grid-cols-1 md:grid-cols-2">
+
+          {/* PANEL KIRI */}
+          <section className="relative hidden md:flex min-h-0 overflow-hidden bg-[#0b2046]">
+
+            <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full border-[45px] border-white/[0.06]" />
+
+            <div className="absolute -bottom-36 -left-28 h-96 w-96 rounded-full border-[55px] border-[#f05a22]/15" />
+
+            <div className="absolute right-20 bottom-32 h-52 w-52 rounded-full bg-[#f05a22]/10 blur-3xl" />
+
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0b2046] via-transparent to-[#071633]/80" />
+
+            <div className="relative z-10 flex h-full w-full flex-col justify-between p-7 lg:p-9 xl:p-11">
+
+              {/* BRAND */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f05a22] text-white shadow-lg">
+                  <Train size={25} />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-extrabold tracking-wide text-white">
+                    SIPAKAI
+                  </h2>
+
+                  <p className="mt-1 text-[9px] leading-4 tracking-[1.3px] text-blue-100">
+                    SISTEM INFORMASI PENGELOLAAN
+                  </p>
+
+                  <p className="text-[9px] leading-4 tracking-[1.3px] text-blue-100">
+                    ADMINISTRASI DAN DOKUMENTASI KAI
+                  </p>
+                </div>
+              </div>
+
+              {/* INTRO */}
+              <div className="my-5 max-w-lg">
+                <span className="inline-flex rounded-md bg-[#f05a22] px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                  Sistem Administrasi Terintegrasi
+                </span>
+
+                <h2 className="mt-5 text-3xl lg:text-4xl xl:text-[42px] font-extrabold leading-[1.15] text-white">
+                  Digitalisasi
+                  <br />
+                  Administrasi
+                  <span className="block text-[#ff895b]">
+                    dalam Satu Sistem
+                  </span>
+                </h2>
+
+                <p className="mt-5 max-w-md text-sm leading-7 text-blue-100/90">
+                  Mengintegrasikan pengajuan, verifikasi, persetujuan,
+                  pengelolaan aset, dokumentasi, dan pengarsipan
+                  untuk mendukung proses administrasi KAI.
+                </p>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {['Administrasi', 'Approval', 'Dokumentasi', 'Arsip'].map((item) => (
+                    <span
+                      key={item}
+                      className="rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[10px] font-medium text-white backdrop-blur-sm"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* FOOTER PANEL */}
+              <div className="border-t border-white/15 pt-4">
+                <p className="text-[10px] leading-5 text-blue-100/70">
+                  Sistem Informasi Pengelolaan Administrasi dan Dokumentasi KAI
+                </p>
+              </div>
             </div>
-          </div>
+          </section>
 
-          {/* Right Column - Login Form */}
-          <div className="w-full md:w-1/2 p-10 lg:p-14 flex flex-col justify-center bg-white">
-            <h2 className="text-3xl font-bold text-[#0b2046] mb-2">Masuk ke Sistem</h2>
-            <p className="text-slate-500 text-sm mb-10 leading-relaxed">
-              Silakan masukkan NIPP dan kata sandi Anda untuk melanjutkan ke dashboard manajemen aset TI.
-            </p>
+          {/* PANEL KANAN */}
+          <section className="flex min-h-0 flex-col justify-center overflow-y-auto bg-white px-6 py-6 sm:px-9 lg:px-9 xl:px-14">
 
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-lg text-sm border border-red-100 flex items-center">
-                {error}
+            <div className="mx-auto w-full max-w-md">
+
+              {/* TITLE */}
+              <div className="mb-5">
+                <p className="text-[10px] font-bold uppercase tracking-[2px] text-[#f05a22]">
+                  Selamat Datang
+                </p>
+
+                <h2 className="mt-2 text-2xl lg:text-3xl font-extrabold tracking-tight text-[#0b2046]">
+                  Masuk ke Sistem
+                </h2>
+
+                <p className="mt-2 text-xs sm:text-sm leading-6 text-slate-500">
+                  Masukkan Email/NIPP dan kata sandi untuk mengakses layanan SIPAKAI.
+                </p>
               </div>
-            )}
 
-            <form onSubmit={handleLogin} className="flex flex-col gap-6">
-              {/* NIPP Input */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-[#0b2046] uppercase tracking-wide">
-                  Username / NIPP <span className="text-[#f05a22]">*</span>
-                </label>
-                <div className="relative flex items-center">
-                  <div className="absolute left-4 text-slate-400">
-                    <IdCard className="w-5 h-5" />
-                  </div>
-                  <input
-                    type="text"
-                    value={nip}
-                    onChange={(e) => setNip(e.target.value)}
-                    placeholder="Masukkan NIPP atau Email KAI (cth. 52489)"
-                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f05a22]/20 focus:border-[#f05a22] transition-all text-sm placeholder-slate-400"
-                    required
-                  />
+              {/* ERROR */}
+              {error && (
+                <div
+                  role="alert"
+                  className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"
+                >
+                  {error}
                 </div>
-                <p className="text-[11px] text-slate-400 ml-1">Nomor Induk Pegawai Perusahaan resmi terdaftar di HCIS KAI</p>
-              </div>
+              )}
 
-              {/* Password Input */}
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-[#0b2046] uppercase tracking-wide">
-                    Kata Sandi <span className="text-[#f05a22]">*</span>
+              {/* FORM LOGIN */}
+              <form onSubmit={handleLogin} className="flex flex-col gap-4">
+
+                <div>
+                  <label className="mb-2 block text-[11px] font-bold tracking-wide text-slate-700">
+                    EMAIL / NIPP
+                    <span className="ml-1 text-[#f05a22]">*</span>
                   </label>
-                  <a href="#" className="text-xs font-semibold text-[#0b2046] hover:text-[#f05a22] transition-colors">
-                    Lupa Kata Sandi?
-                  </a>
-                </div>
-                <div className="relative flex items-center">
-                  <div className="absolute left-4 text-slate-400">
-                    <Lock className="w-5 h-5" />
+
+                  <div className="relative">
+                    <IdCard
+                      size={18}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      type="text"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder="Masukkan email atau NIPP Anda"
+                      autoComplete="username"
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-[#f05a22] focus:bg-white focus:ring-4 focus:ring-orange-100"
+                    />
                   </div>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Masukkan kata sandi akun anda"
-                    className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f05a22]/20 focus:border-[#f05a22] transition-all text-sm placeholder-slate-400"
-                    required
-                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[11px] font-bold tracking-wide text-slate-700">
+                    KATA SANDI
+                    <span className="ml-1 text-[#f05a22]">*</span>
+                  </label>
+
+                  <div className="relative">
+                    <Lock
+                      size={18}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Masukkan kata sandi"
+                      autoComplete="current-password"
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-12 text-sm outline-none transition placeholder:text-slate-400 focus:border-[#f05a22] focus:bg-white focus:ring-4 focus:ring-orange-100"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#0b2046]"
+                    >
+                      {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* LUPA PASSWORD */}
+                <div className="flex justify-end -mt-1">
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    onClick={() => navigate('/forgot-password')}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
                   >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    Lupa Password?
                   </button>
                 </div>
-              </div>
 
-              {/* Options Row */}
-              <div className="flex items-center justify-between mt-1 mb-2">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-300 text-[#f05a22] focus:ring-[#f05a22]"
-                  />
-                  <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Ingat Saya</span>
-                </label>
-                
-                <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-md border border-emerald-100">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span className="text-[11px] font-bold tracking-wide">SSO / BSrE Protected</span>
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex flex-col gap-3 mt-2">
+                {/* TOMBOL LOGIN */}
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-[#f05a22] hover:bg-[#d94a18] text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[#f05a22] px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:-translate-y-0.5 hover:bg-[#d94a18] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLoading ? 'Memproses...' : 'Masuk ke Sistem'}
-                  {!isLoading && <ArrowRight className="w-4 h-4" />}
+                  {!isLoading && <ArrowRight size={18} />}
                 </button>
-                
-                <button
-                  type="button"
-                  onClick={onGuestBook}
-                  className="w-full bg-[#0b2046] hover:bg-[#071633] text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center"
-                >
-                  Buku Tamu
-                </button>
+              </form>
+
+              {/* DIVIDER */}
+              <div className="my-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-slate-200" />
+
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Akses lainnya
+                </span>
+
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+
+              {/* BUKU TAMU */}
+              <button
+                type="button"
+                onClick={onGuestBook}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#0b2046] bg-white px-4 py-3 text-sm font-bold text-[#0b2046] transition hover:bg-blue-50"
+              >
+                <BookUser size={18} />
+                Buku Tamu
+              </button>
+
+              {/* REGISTER */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-1 text-xs sm:text-sm">
+                <span className="text-slate-500">
+                  Belum memiliki akun?
+                </span>
 
                 <button
                   type="button"
                   onClick={onRegister}
-                  className="w-full border border-[#0b2046] text-[#0b2046] hover:bg-slate-50 font-semibold py-3.5 px-4 rounded-xl transition-colors"
+                  className="inline-flex items-center gap-1 font-bold text-[#f05a22] transition hover:text-[#d94a18]"
                 >
+                  <UserRoundPlus size={15} />
                   Daftar Akun Pemohon
                 </button>
               </div>
-            </form>
-          </div>
+
+            </div>
+          </section>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="w-full bg-[#0b2046] text-white py-4 text-center text-xs font-light">
-        © 2025 PT Kereta Api Indonesia (Persero). Seluruh hak cipta dilindungi undang-undang.
+      {/* FOOTER */}
+      <footer className="h-[32px] shrink-0 flex items-center justify-center bg-[#0b2046] px-3 text-center text-[9px] text-blue-100/80">
+        © 2026 PT Kereta Api Indonesia (Persero). Seluruh hak cipta dilindungi undang-undang.
       </footer>
     </div>
-  );
+  )
 }

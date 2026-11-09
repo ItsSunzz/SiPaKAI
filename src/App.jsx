@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
 import DashboardPage from './pages/DashboardPage'
 import RegisterPage from './pages/RegisterPage'
+import GuestBookPage from './pages/GuestBookPage'
 import PemusnahanListPage from './pages/PemusnahanListPage'
 import PemusnahanFormPage from './pages/PemusnahanFormPage'
 import PenghapusanFormPage from './pages/PenghapusanFormPage'
@@ -11,6 +12,8 @@ import PengaturanPage from './pages/PengaturanPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import Login from './components/Login'
 import { api, fallbackDocuments, getToken, setToken } from './services/api'
 
@@ -22,8 +25,17 @@ const formatJabatan = (jabatan) => {
 }
 
 export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  )
+}
+
+function AppContent() {
+  const navigate = useNavigate()
+
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [publicPage, setPublicPage] = useState('login')
   const [userProfile, setUserProfile] = useState(null)
   const [documents, setDocuments] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -178,26 +190,60 @@ export default function App() {
     }
   }
 
-  if (!isAuthenticated) {
-    if (publicPage === 'register') {
-      return (
-        <RegisterPage
-          onBackToLogin={() => setPublicPage('login')}
-        />
-      )
-    }
 
+  if (!isAuthenticated) {
     return (
-      <Login
-        onLoginSuccess={handleLoginSuccess}
-        onGuestBook={() => setPublicPage('guestbook')}
-        onRegister={() => setPublicPage('register')}
-      />
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <Login
+              onLoginSuccess={handleLoginSuccess}
+              onGuestBook={() => navigate('/buku-tamu')}
+              onRegister={() => navigate('/register')}
+            />
+          }
+        />
+
+        <Route
+          path="/register"
+          element={
+            <RegisterPage onBackToLogin={() => navigate('/')} />
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={
+            <ForgotPasswordPage
+              onBackToLogin={() => navigate('/')}
+            />
+          }
+        />
+
+        <Route
+          path="/reset-password"
+          element={
+            <ResetPasswordPage
+              onBackToLogin={() => navigate('/')}
+            />
+          }
+        />
+
+        <Route
+          path="/buku-tamu/*"
+          element={
+            <GuestBookPage onBackToLogin={() => navigate('/')} />
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     )
   }
 
   return (
-    <BrowserRouter>
+    <>
       {/* Toast Notification Alert */}
       {notification && (
         <div className="fixed top-4 right-4 z-50 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-semibold flex items-center justify-between shadow-lg animate-in fade-in">
@@ -214,8 +260,19 @@ export default function App() {
 
       <Routes>
         <Route path="/" element={<MainLayout user={userProfile} onLogout={handleLogout} />}>
-          <Route index element={
-            <DashboardPage 
+        <Route index element={
+        <DashboardPage
+          user={userProfile}
+          documents={documents}
+          isLoading={isLoading}
+          loadDocuments={loadDocuments}
+          handleOpenModule={handleOpenModule}
+          handleReviewDocument={handleReviewDocument}
+          handleViewDocument={handleViewDocument}
+        />
+      } />
+          <Route path="dashboard" element={
+            <DashboardPage
               user={userProfile}
               documents={documents}
               isLoading={isLoading}
@@ -270,6 +327,6 @@ export default function App() {
           user={userProfile}
         />
       )}
-    </BrowserRouter>
+    </>
   )
 }

@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001/api'
 
 export const fallbackDocuments = [
   {
@@ -88,28 +88,69 @@ async function request(endpoint, options = {}) {
 
 export const api = {
   // Auth
-  async login(nip, password, role = null) {
+  async login(login, password, role = null) {
     const data = await request('/auth/login', {
       method: 'POST',
-      body: { nip, password, role },
+      body: { login, password, role },
     })
+
     if (data.token) {
       setToken(data.token)
     }
+
     return data
   },
 
   // Register akun pemohon
-  async register({ nip, name, jabatan, unit_kerja, password, password_confirmation }) {
+  async register({ nip, email, name, jabatan, unit_kerja, password, password_confirmation }) {
     return request('/auth/register', {
       method: 'POST',
       body: {
         nip,
+        email,
         name,
         jabatan,
         unit_kerja,
         password,
         password_confirmation,
+      },
+    })
+  },
+
+  // Forgot Password
+  async requestPasswordReset(email) {
+    return request('/forgot-password', {
+      method: 'POST',
+      body: { email },
+    })
+  },
+
+  // Reset Password
+  async resetPassword(payload) {
+    return request('/reset-password', {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
+  // Buku Tamu - pengunjung tidak perlu login
+  async createVisitor(payload) {
+    return request('/visitors', {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
+    async searchVisitors(query) {
+    const params = new URLSearchParams({ q: query })
+    return request(`/visitors/search?${params.toString()}`)
+  },
+
+    async checkoutVisitor(visitorId, checkoutToken) {
+    return request(`/visitors/${visitorId}/checkout`, {
+      method: 'PATCH',
+      body: {
+        checkout_token: checkoutToken,
       },
     })
   },
