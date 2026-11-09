@@ -200,20 +200,20 @@ export default function PemusnahanReviewPage({ user }) {
   // Sequential Step & Requester Choice Calculation
   // Hanya gunakan riwayat persetujuan pada siklus pengajuan aktif (setelah penolakan terakhir),
   // lalu nomori ulang tahapnya 1..n agar pengajuan ulang selalu dimulai lagi dari Verifikator 1.
-  const isRejectedRow = (a) =\u003e String(a?.aksi || a?.action || '').toLowerCase() === 'rejected';
-  const sortedHistory = [...(doc.approvals || doc.persetujuan || [])].sort((a, b) =\u003e Number(a.step) - Number(b.step));
-  const rejectionIdxs = sortedHistory.reduce((acc, a, i) =\u003e (isRejectedRow(a) ? [...acc, i] : acc), []);
+  const isRejectedRow = (a) => String(a?.aksi || a?.action || '').toLowerCase() === 'rejected';
+  const sortedHistory = [...(doc.approvals || doc.persetujuan || [])].sort((a, b) => Number(a.step) - Number(b.step));
+  const rejectionIdxs = sortedHistory.reduce((acc, a, i) => (isRejectedRow(a) ? [...acc, i] : acc), []);
   let cycleRows = sortedHistory;
-  if (rejectionIdxs.length \u003e 0) {
+  if (rejectionIdxs.length > 0) {
     const lastRej = rejectionIdxs[rejectionIdxs.length - 1];
     if (isRejected) {
-      const prevRej = rejectionIdxs.length \u003e 1 ? rejectionIdxs[rejectionIdxs.length - 2] : -1;
+      const prevRej = rejectionIdxs.length > 1 ? rejectionIdxs[rejectionIdxs.length - 2] : -1;
       cycleRows = sortedHistory.slice(prevRej + 1, lastRej + 1);
     } else {
       cycleRows = sortedHistory.slice(lastRej + 1);
     }
   }
-  const approvalHistory = cycleRows.map((a, i) =\u003e ({ ...a, global_step: a.step, step: i + 1 }));
+  const approvalHistory = cycleRows.map((a, i) => ({ ...a, global_step: a.step, step: i + 1 }));
   const dData = doc.data || {};
 
   const chainFromData = Array.isArray(dData.approval_chain) && dData.approval_chain.length > 0
