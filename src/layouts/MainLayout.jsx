@@ -9,6 +9,8 @@ export default function MainLayout({ user, onLogout }) {
   
   // Mapping paths to menu keys for the Sidebar
   const getActiveMenu = () => {
+    if (location.pathname.startsWith('/pengguna')) return 'pengguna';
+    if (location.pathname.startsWith('/log-aktivitas')) return 'log-aktivitas';
     if (location.pathname.startsWith('/pengaturan')) return 'pengaturan';
     if (location.pathname.startsWith('/penghapusan')) return 'dsp03';
     if (location.pathname.startsWith('/berita-acara-pemusnahan') || location.pathname.startsWith('/pemusnahan/berita-acara') || location.pathname.startsWith('/dsp02')) return 'dsp02';
@@ -27,6 +29,8 @@ export default function MainLayout({ user, onLogout }) {
     else if (menu === 'ho01' || menu === 'bast-barang') navigate('/bast-barang');
     else if (menu === 'ho02' || menu === 'bast-aplikasi') navigate('/bast-aplikasi');
     else if (menu === 'pengaturan') navigate('/pengaturan');
+    else if (menu === 'pengguna') navigate('/pengguna');
+    else if (menu === 'log-aktivitas') navigate('/log-aktivitas');
     else alert('Menu ini belum diimplementasikan di versi routing baru.');
   };
 
@@ -35,6 +39,7 @@ export default function MainLayout({ user, onLogout }) {
       <Sidebar 
         activeMenu={getActiveMenu()} 
         onSelectMenu={handleSelectMenu} 
+        onLogout={onLogout}
         currentRole={user?.role || 'user'} 
       />
       <div className="flex-1 flex flex-col min-w-0 min-h-screen max-w-full overflow-hidden">

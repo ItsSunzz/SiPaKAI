@@ -463,6 +463,8 @@ export default function PemusnahanReviewPage({ user }) {
           : res?.message || 'Dokumen berhasil disetujui penuh dan dinyatakan sah!'
       );
       
+      window.dispatchEvent(new Event('sipakai:notification_refresh'));
+
       // Reload document data
       setTimeout(() => {
         loadDocumentData();
@@ -495,6 +497,7 @@ export default function PemusnahanReviewPage({ user }) {
       });
 
       setSuccessMessage(res?.message || 'Dokumen berhasil ditolak dengan catatan resmi.');
+      window.dispatchEvent(new Event('sipakai:notification_refresh'));
       setTimeout(() => {
         loadDocumentData();
       }, 1000);

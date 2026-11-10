@@ -20,6 +20,8 @@ import BastAplikasiPreviewPage from './pages/BastAplikasiPreviewPage'
 import BaPemusnahanListPage from './pages/BaPemusnahanListPage'
 import BaPemusnahanFormPage from './pages/BaPemusnahanFormPage'
 import BaPemusnahanPreviewPage from './pages/BaPemusnahanPreviewPage'
+import PenggunaPage from './pages/PenggunaPage'
+import LogAktivitasPage from './pages/LogAktivitasPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -180,6 +182,7 @@ function AppContent() {
     setCreateModuleType(null)
     showToast(msg)
     loadDocuments()
+    window.dispatchEvent(new Event('sipakai:notification_refresh'))
   }
 
   const handleReviewDocument = (doc) => {
@@ -234,6 +237,7 @@ function AppContent() {
       setSelectedReviewDoc(null)
       showToast(res.message || 'Tindakan pengesahan berhasil diproses dan dicatat.')
       loadDocuments()
+      window.dispatchEvent(new Event('sipakai:notification_refresh'))
     } catch (err) {
       showToast(err.message || 'Terjadi kesalahan saat memproses')
     } finally {
@@ -427,6 +431,8 @@ function AppContent() {
           <Route path="bast%20aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
 
           <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
+          <Route path="pengguna" element={<PenggunaPage user={userProfile} />} />
+          <Route path="log-aktivitas" element={<LogAktivitasPage user={userProfile} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

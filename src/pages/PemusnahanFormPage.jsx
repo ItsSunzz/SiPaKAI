@@ -396,6 +396,9 @@ export default function PemusnahanFormPage({ user }) {
       } else {
         resDoc = await api.createDocument(payload);
       }
+      try {
+        window.dispatchEvent(new Event('sipakai:notification_refresh'));
+      } catch (e) {}
 
       const createdDocId = resDoc?.document?.id || resDoc?.id || id;
       const createdDocNumber = resDoc?.document?.number || resDoc?.document?.nomor || resDoc?.number || existingDoc?.number || existingDoc?.nomor;

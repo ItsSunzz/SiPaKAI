@@ -417,7 +417,38 @@ export const api = {
     })
   },
 
-  // Notifikasi
+  // Super Admin: manajemen user & activity log
+  async getUserStats() {
+    return request('/users/stats')
+  },
+
+  async getUsers(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/users${query ? `?${query}` : ''}`)
+  },
+
+  async createUser(payload) {
+    return request('/users', { method: 'POST', body: payload })
+  },
+
+  async updateUser(id, payload) {
+    return request(`/users/${id}`, { method: 'PUT', body: payload })
+  },
+
+  async deactivateUser(id) {
+    return request(`/users/${id}`, { method: 'DELETE' })
+  },
+
+  async getActivityLogs(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/activity-logs${query ? `?${query}` : ''}`)
+  },
+
+  async getActivityLogActions() {
+    return request('/activity-logs/actions')
+  },
+
+  // Notifications
   async getNotifications(params = {}) {
     const query = new URLSearchParams(params).toString()
     return request(`/notifications${query ? `?${query}` : ''}`)
@@ -429,10 +460,18 @@ export const api = {
     })
   },
 
+  async markNotificationRead(id) {
+    return this.markNotificationAsRead(id)
+  },
+
   async markAllNotificationsAsRead() {
     return request('/notifications/read-all', {
       method: 'POST',
     })
+  },
+
+  async markAllNotificationsRead() {
+    return this.markAllNotificationsAsRead()
   },
 
   async deleteNotification(id) {
@@ -441,3 +480,4 @@ export const api = {
     })
   },
 }
+
