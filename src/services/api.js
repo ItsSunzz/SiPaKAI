@@ -115,7 +115,7 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
-  // Auth
+    // Auth
   async login(nip, password, role = null) {
     const data = await request('/auth/login', {
       method: 'POST',
@@ -280,6 +280,37 @@ export const api = {
     }
     return json;
   },
+  getDocumentPdfUrl(id, inline = true, template = null) {
+    const token = getToken();
+    const inlineParam = inline ? '&inline=1' : '';
+    const templateParam = template ? `&template=${encodeURIComponent(template)}` : '';
+    return `${API_BASE_URL}/documents/${id}/pdf?token=${encodeURIComponent(token)}${inlineParam}${templateParam}`;
+  },
+
+
+  async downloadDocumentPdf(id, filename) {
+    // Download PDF yang benar menggunakan Authorization header (Sanctum auth)
+    const token = getToken()
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf`, {
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.message || `Gagal mengunduh PDF: HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `dokumen-${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
 
   // Approvers list
   async getApprovers(params = '') {
@@ -422,6 +453,8 @@ export const api = {
     return request(`/notifications/${id}`, {
       method: 'DELETE',
     })
-  },
+  }
+
 }
 
+export default api;
