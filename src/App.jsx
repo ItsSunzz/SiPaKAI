@@ -277,6 +277,7 @@ export default function App() {
             />
           } />
           <Route path="pemusnahan/:id/review" element={<PemusnahanReviewPage user={userProfile} />} />
+          <Route path="pemusnahan/review/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/:id" element={<PemusnahanReviewPage user={userProfile} />} />
           <Route path="pemusnahan/:id/edit" element={<PemusnahanFormPage user={userProfile} />} />
           <Route path="pemusnahan/:id/revisi" element={<PemusnahanFormPage user={userProfile} />} />
