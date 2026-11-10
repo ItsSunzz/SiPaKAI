@@ -290,6 +290,29 @@ export const api = {
     return await res.blob();
   },
 
+  async downloadDocumentPdf(id, filename) {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf`, {
+      headers: {
+        Accept: 'application/pdf',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || `Gagal mengunduh PDF: HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || `dokumen-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
   getDocumentPdfUrl(id, inline = true, template = null) {
     const token = getToken();
     const inlineParam = inline ? '&inline=1' : '';
