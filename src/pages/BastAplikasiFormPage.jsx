@@ -27,7 +27,8 @@ import {
   FileCheck,
   Save,
   Check,
-  Clock
+  Clock,
+  Printer
 } from 'lucide-react';
 import { api } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
@@ -101,13 +102,17 @@ export default function BastAplikasiFormPage({ user }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  // Metode Tanda Tangan Penerima: 'digital' (Full Sistem) | 'manual' (Cetak & Materai Fisik)
+  const [metodeTtd, setMetodeTtd] = useState('digital');
+  const [activePreviewTemplate, setActivePreviewTemplate] = useState('ho02');
+
   // Modal Pratinjau Lembar Fisik A4 (FR.SM/TI/011.002/10-2020) - Backend DomPDF
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewPdfBlobUrl, setPreviewPdfBlobUrl] = useState(null);
   const [isLoadingPreviewPdf, setIsLoadingPreviewPdf] = useState(false);
   const [previewPdfError, setPreviewPdfError] = useState(null);
 
-  const handleOpenPreviewPdf = async () => {
+  const handleOpenPreviewPdf = async (customTemplate = null) => {
     setIsPreviewOpen(true);
     setIsLoadingPreviewPdf(true);
     setPreviewPdfError(null);
@@ -116,13 +121,18 @@ export default function BastAplikasiFormPage({ user }) {
       setPreviewPdfBlobUrl(null);
     }
 
+    const templateToUse = customTemplate || (metodeTtd === 'manual' ? 'manual' : 'ho02');
+    setActivePreviewTemplate(templateToUse);
+
     try {
       const payload = {
         type: 'ho02',
+        template: templateToUse,
         data: {
           ...docMeta,
           penyerah,
           penerima,
+          metode_ttd: metodeTtd,
           keperluan,
           masa_aktif_mulai: masaAktif.mulai,
           masa_aktif_sampai: masaAktif.sampai || masaAktif.selesai,
@@ -441,6 +451,7 @@ export default function BastAplikasiFormPage({ user }) {
             jabatan_instansi: penerima.jabatan_instansi || penerima.jabatan,
             jabatan: penerima.jabatan || penerima.jabatan_instansi,
           },
+          metode_ttd: metodeTtd,
           accounts,
           keperluan,
           masa_aktif_mulai: masaAktif.mulai,
@@ -1176,13 +1187,93 @@ export default function BastAplikasiFormPage({ user }) {
               </ol>
             </div>
 
+            {/* PEMILIHAN METODE TANDA TANGAN PENERIMA */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <label className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                    <PenTool className="w-4 h-4 text-[#003580]" />
+                    Metode Tanda Tangan Penerima *
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Tentukan format tanda tangan yang akan digunakan oleh pihak penerima dalam berita acara serah terima ini:
+                  </p>
+                </div>
+                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                  metodeTtd === 'manual'
+                    ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                    : 'bg-blue-100 text-blue-800 border border-blue-200'
+                }`}>
+                  {metodeTtd === 'manual' ? 'Manual (Cetak & Materai)' : 'Digital (Full Sistem)'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Opsi Digital */}
+                <label
+                  onClick={() => setMetodeTtd('digital')}
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                    metodeTtd === 'digital'
+                      ? 'border-[#003580] bg-blue-50/70 shadow-2xs ring-1 ring-[#003580]/30'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="metode_ttd"
+                    value="digital"
+                    checked={metodeTtd === 'digital'}
+                    onChange={() => setMetodeTtd('digital')}
+                    className="mt-1 text-[#003580] focus:ring-0 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#003580]" />
+                      Digital (Full Sistem)
+                    </span>
+                    <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                      Penerima menandatangani secara elektronik di aplikasi SIPAKAI menggunakan PIN resmi dan stempel digital terenkripsi.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Opsi Manual */}
+                <label
+                  onClick={() => setMetodeTtd('manual')}
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                    metodeTtd === 'manual'
+                      ? 'border-[#EE7623] bg-orange-50/70 shadow-2xs ring-1 ring-[#EE7623]/30'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="metode_ttd"
+                    value="manual"
+                    checked={metodeTtd === 'manual'}
+                    onChange={() => setMetodeTtd('manual')}
+                    className="mt-1 text-[#EE7623] focus:ring-0 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <Printer className="w-4 h-4 text-[#EE7623]" />
+                      Manual (Cetak & Materai Fisik)
+                    </span>
+                    <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                      Penerima menandatangani basah di atas materai fisik setelah dokumen disetujui (disediakan template siap cetak ber-materai).
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             {/* Mode Tanda Tangan */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Kolom 1: PIN Otorisasi */}
               <div className="space-y-3 bg-blue-50/60 border border-blue-200 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-[#003580] font-bold">
                   <Lock className="w-4 h-4" />
-                  <span>PIN Otorisasi Tanda Tangan Digital *</span>
+                  <span>PIN Otorisasi Tanda Tangan Digital Penyerah *</span>
                 </div>
                 <input
                   type="password"
@@ -1235,17 +1326,18 @@ export default function BastAplikasiFormPage({ user }) {
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
               <button
                 type="button"
-                onClick={handleOpenPreviewPdf}
-                className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors"
+                onClick={() => handleOpenPreviewPdf()}
+                className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
               >
-                Pratinjau Lembar Fisik
+                <FileText className="w-3.5 h-3.5 text-[#003580]" />
+                Pratinjau Lembar Dokumen
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSubmitForm(false)}
                 disabled={isSubmitting || isSavingDraft || !agreementConfirmed}
-                className="px-7 py-2.5 rounded-xl bg-[#EE7623] hover:bg-[#d96515] text-white text-xs font-bold shadow-md shadow-orange-950/20 transition-all hover:scale-102 active:scale-98 disabled:opacity-50"
+                className="px-7 py-2.5 rounded-xl bg-[#EE7623] hover:bg-[#d96515] text-white text-xs font-bold shadow-md shadow-orange-950/20 transition-all hover:scale-102 active:scale-98 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmitting ? 'Memproses Dokumen...' : 'Sahkan & Terbitkan BAST User Aplikasi'}
               </button>
@@ -1255,11 +1347,11 @@ export default function BastAplikasiFormPage({ user }) {
       </div>
 
       {/* MODAL PRATINJAU LEMBAR FISIK A4 (PERSIS FORMAT FORMULIR KAI) */}
-            {/* Modal Pratinjau Dokumen Backend DomPDF */}
+      {/* Modal Pratinjau Dokumen Backend DomPDF */}
       {isPreviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col h-[90vh]">
-            <div className="bg-[#0b2046] text-white p-4 flex items-center justify-between">
+            <div className="bg-[#0b2046] text-white p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-sky-400" />
                 <div>
@@ -1267,21 +1359,50 @@ export default function BastAplikasiFormPage({ user }) {
                   <p className="text-[11px] text-slate-300">Format standar resmi KAI langsung dari template DomPDF backend</p>
                 </div>
               </div>
+
+              {/* Template Toggle Buttons */}
               <div className="flex items-center gap-2">
+                <div className="flex bg-slate-800/90 p-1 rounded-lg border border-slate-700 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPreviewPdf('ho02')}
+                    className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      activePreviewTemplate === 'ho02'
+                        ? 'bg-[#003580] text-white font-bold shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Digital (ho02)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPreviewPdf('manual')}
+                    className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      activePreviewTemplate === 'manual'
+                        ? 'bg-[#EE7623] text-white font-bold shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Printer className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Manual (Materai & TTD Basah)</span>
+                  </button>
+                </div>
+
                 {previewPdfBlobUrl && (
                   <a
                     href={previewPdfBlobUrl}
-                    download="BAST-User-Aplikasi-Draft.pdf"
+                    download={`BAST-User-Aplikasi-${activePreviewTemplate === 'manual' ? 'Manual-Materai' : 'Digital'}.pdf`}
                     className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 shadow-xs transition-colors"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    Unduh PDF
+                    Unduh
                   </a>
                 )}
                 <button
                   type="button"
                   onClick={handleClosePreviewPdf}
-                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1292,7 +1413,9 @@ export default function BastAplikasiFormPage({ user }) {
               {isLoadingPreviewPdf ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
                   <Loader2 className="w-8 h-8 text-[#EE7623] animate-spin" />
-                  <p className="text-xs font-medium">Menghasilkan pratinjau dokumen dari template backend...</p>
+                  <p className="text-xs font-medium">
+                    Menghasilkan pratinjau template {activePreviewTemplate === 'manual' ? 'Manual (ho02_manual.blade.php)' : 'Digital (ho02.blade.php)'}...
+                  </p>
                 </div>
               ) : previewPdfError ? (
                 <div className="bg-rose-50 border border-rose-200 text-rose-700 p-6 rounded-xl max-w-md text-center space-y-2">
@@ -1300,7 +1423,7 @@ export default function BastAplikasiFormPage({ user }) {
                   <p className="text-xs text-rose-600">{previewPdfError}</p>
                   <button
                     type="button"
-                    onClick={handleOpenPreviewPdf}
+                    onClick={() => handleOpenPreviewPdf(activePreviewTemplate)}
                     className="mt-2 px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700"
                   >
                     Coba Lagi
@@ -1315,14 +1438,20 @@ export default function BastAplikasiFormPage({ user }) {
               ) : null}
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-              <span>* Pratinjau dihasilkan langsung menggunakan engine DomPDF backend template ho02.blade.php.</span>
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Template aktif:{' '}
+                <strong className="text-slate-800">
+                  {activePreviewTemplate === 'manual' ? 'ho02_manual.blade.php (Siap Cetak & Materai Fisik)' : 'ho02.blade.php (Arsip Digital Elektronik)'}
+                </strong>
+              </span>
               <button
                 type="button"
                 onClick={handleClosePreviewPdf}
-                className="px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                className="px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
               >
-                Tutup
+                Tutup Pratinjau
               </button>
             </div>
           </div>
