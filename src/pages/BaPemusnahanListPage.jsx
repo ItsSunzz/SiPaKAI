@@ -14,7 +14,8 @@ import {
   AlertCircle,
   FileDown,
   X,
-  Loader2
+  Loader2,
+  Edit3
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 
@@ -533,6 +534,21 @@ export default function BaPemusnahanListPage({ user }) {
                           <span>PDF</span>
                         </button>
                         {(() => {
+                          const isDraft = doc.status === 'draft' || doc.status === 'draf';
+                          if (isDraft) {
+                            return (
+                              <button
+                                type="button"
+                                id={`btn-edit-draft-${doc.id || idx}`}
+                                onClick={() => navigate(`/berita-acara-pemusnahan/${doc.id}/edit`)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#f05a22] hover:bg-[#d94a18] text-white transition-all shadow-xs"
+                                title="Edit dan Lanjutkan Pengisian Draf"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Edit Draf</span>
+                              </button>
+                            );
+                          }
                           const canAct = isPending && (isAdminOrSuper || (user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)));
                           return (
                             <button
