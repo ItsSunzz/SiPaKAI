@@ -8,6 +8,55 @@ import { inputCls } from '../components/UserFormModal'
 const PER_PAGE = 8
 const pad = (n) => String(n).padStart(2, '0')
 
+// Helper untuk memformat kode aksi teknis menjadi bahasa manusiawi yang komunikatif
+export function humanizeAction(actionCode = '') {
+  const code = (actionCode || '').toLowerCase()
+
+  const mapping = {
+    'auth.login': 'Masuk Sistem (Login)',
+    'auth.logout': 'Keluar Sistem (Logout)',
+    'auth.login_failed': 'Gagal Masuk (Login Gagal)',
+    'document.submit': 'Pengajuan Dokumen',
+    'document.approve': 'Persetujuan Dokumen (Approved)',
+    'document.approve_final': 'Persetujuan Dokumen Selesai (Final)',
+    'document.reject': 'Penolakan Dokumen (Rejected)',
+    'document.forward': 'Penerusan Dokumen (Forwarded)',
+    'document.assets_updated': 'Pembaruan Data Aset Dokumen',
+    'user.create': 'Penambahan Pengguna Baru',
+    'user.update': 'Pembaruan Data Pengguna',
+    'user.deactivate': 'Penonaktifan Akun Pengguna',
+    'system.purge_secrets': 'Pembersihan Data Rahasia Sistem',
+    'visitor.checkin': 'Buku Tamu (Check-in)',
+    'visitor.checkout': 'Buku Tamu (Check-out)',
+    'visitor.update': 'Pembaruan Data Buku Tamu',
+    'asset.create': 'Penambahan Aset Baru',
+    'asset.update': 'Pembaruan Data Aset',
+    'asset.delete': 'Penghapusan Data Aset',
+  }
+
+  if (mapping[code]) {
+    return mapping[code]
+  }
+
+  if (code.startsWith('auth.')) {
+    return `Autentikasi: ${code.replace('auth.', '').replace(/_/g, ' ')}`
+  }
+  if (code.startsWith('document.') || code.startsWith('doc.')) {
+    const act = code.replace(/^(document|doc)\./, '').replace(/_/g, ' ')
+    return `Dokumen: ${act}`
+  }
+  if (code.startsWith('user.')) {
+    const act = code.replace('user.', '').replace(/_/g, ' ')
+    return `Pengguna: ${act}`
+  }
+  if (code.startsWith('asset.')) {
+    const act = code.replace('asset.', '').replace(/_/g, ' ')
+    return `Aset: ${act}`
+  }
+
+  return code.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 // Helper untuk format aksi dan modul dengan bahasa yang mudah dipahami (sesuai gambar)
 function formatAction(log) {
   const aksi = (log.aksi || '').toLowerCase()
@@ -308,9 +357,13 @@ export default function LogAktivitasPage({ user }) {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input className={`${inputCls} pl-9 w-64`} placeholder="Cari aksi, IP, nama, NIP…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className={`${inputCls} w-52`} value={aksi} onChange={onFilter(setAksi)}>
-          <option value="">Semua aksi & modul</option>
-          {actions.map((a) => <option key={a} value={a}>{a}</option>)}
+        <select className={`${inputCls} w-60`} value={aksi} onChange={onFilter(setAksi)}>
+          <option value="">Semua Aksi & Modul</option>
+          {actions.map((a) => (
+            <option key={a} value={a}>
+              {humanizeAction(a)}
+            </option>
+          ))}
         </select>
         <input type="date" className={`${inputCls} w-40`} value={from} onChange={onFilter(setFrom)} />
         <span className="text-xs text-slate-400">s/d</span>
@@ -477,56 +530,75 @@ export default function LogAktivitasPage({ user }) {
       </div>
 
       {/* Modal Detail Aktivitas */}
-      {detail && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="font-bold text-[#0b2046]">
-                Detail Aktivitas · LOG-{String(detail.id).padStart(6, '0')} ({detail.aksi})
-              </h3>
-              <button type="button" onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <div>
-                  <p className="text-slate-400 font-medium">Pelaksana:</p>
-                  <p className="font-bold text-slate-800">{detail.user?.nama || detail.user?.name || 'Sistem'}</p>
-                  <p className="text-slate-500">NIP: {detail.user?.nip || '–'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 font-medium">Jabatan & Unit:</p>
-                  <p className="font-bold text-slate-800">{detail.user?.jabatan || detail.user?.jabatan_relasi?.nama || detail.user?.role || '–'}</p>
-                  <p className="text-slate-500">{detail.user?.unit_kerja || '–'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 font-medium">IP Address:</p>
-                  <p className="font-semibold text-slate-700">{detail.ip_address || '–'}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 font-medium">Waktu:</p>
-                  <p className="font-semibold text-slate-700">
-                    {new Date(detail.created_at).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' })}
-                  </p>
-                </div>
-              </div>
+      {detail && (() => {
+        const modalAction = formatAction(detail)
+        const ActionIcon = modalAction.icon
+        const humanAction = humanizeAction(detail.aksi)
 
-              <div className="grid md:grid-cols-2 gap-4">
-                {[['Data Lama', detail.data_lama], ['Data Baru', detail.data_baru]].map(([t, v]) => (
-                  <div key={t}>
-                    <p className="font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t}</p>
-                    <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-48">
-                      {v ? JSON.stringify(v, null, 2) : '–'}
-                    </pre>
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <div>
+                  <h3 className="font-bold text-[#0b2046] text-base leading-tight">
+                    Detail Aktivitas · LOG-{String(detail.id).padStart(6, '0')}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase rounded ${modalAction.badgeCls}`}>
+                      <ActionIcon className="w-3 h-3" />
+                      {modalAction.badge}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {humanAction}
+                    </span>
                   </div>
-                ))}
+                </div>
+                <button type="button" onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <p className="text-slate-400 break-all text-[11px]">User Agent: {detail.user_agent || '–'}</p>
+              <div className="p-5 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div>
+                    <p className="text-slate-400 font-medium">Pelaksana:</p>
+                    <p className="font-bold text-slate-800">{detail.user?.nama || detail.user?.name || 'Sistem'}</p>
+                    <p className="text-slate-500">NIP: {detail.user?.nip || '–'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 font-medium">Jabatan & Unit:</p>
+                    <p className="font-bold text-slate-800">{detail.user?.jabatan || detail.user?.jabatan_relasi?.nama || detail.user?.role || '–'}</p>
+                    <p className="text-slate-500">{detail.user?.unit_kerja || '–'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 font-medium">Aksi & Modul Terkait:</p>
+                    <p className="font-bold text-slate-800">{modalAction.title}</p>
+                    <p className="text-slate-500 font-medium text-[11px]">{modalAction.module}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 font-medium">Waktu Transaksi:</p>
+                    <p className="font-semibold text-slate-700">
+                      {new Date(detail.created_at).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' })}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">IP: {detail.ip_address || '–'}</p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  {[['Data Sebelum Perubahan (Lama)', detail.data_lama], ['Data Setelah Perubahan (Baru)', detail.data_baru]].map(([t, v]) => (
+                    <div key={t}>
+                      <p className="font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t}</p>
+                      <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-48 text-[11px] font-mono text-slate-700">
+                        {v ? JSON.stringify(v, null, 2) : '–'}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-slate-400 break-all text-[11px]">User Agent: {detail.user_agent || '–'}</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

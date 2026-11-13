@@ -5,6 +5,7 @@ import {
   Handshake,
   User,
   History,
+  BookUser,
   Settings,
   LogOut,
   ChevronDown,
@@ -103,6 +104,7 @@ export default function Sidebar({ activeMenu, onSelectMenu, onLogout, currentRol
             {currentRole === 'super_admin' && (
               <>
                 <Leaf id="pengguna" icon={User} label="Manajemen Pengguna" />
+                <Leaf id="laporan-buku-tamu" icon={BookUser} label="Laporan Buku Tamu" />
                 <Leaf id="log-aktivitas" icon={History} label="Log Aktivitas" />
               </>
             )}

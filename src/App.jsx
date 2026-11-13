@@ -22,6 +22,7 @@ import BaPemusnahanFormPage from './pages/BaPemusnahanFormPage'
 import BaPemusnahanPreviewPage from './pages/BaPemusnahanPreviewPage'
 import PenggunaPage from './pages/PenggunaPage'
 import LogAktivitasPage from './pages/LogAktivitasPage'
+import LaporanBukuTamuPage from './pages/LaporanBukuTamuPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -452,6 +453,7 @@ function AppContent() {
           <Route path="bast/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="pengguna" element={<PenggunaPage user={userProfile} />} />
           <Route path="log-aktivitas" element={<LogAktivitasPage user={userProfile} />} />
+          <Route path="laporan-buku-tamu" element={<LaporanBukuTamuPage user={userProfile} />} />
           <Route path="pengaturan" element={<PengaturanPage user={userProfile} onProfileUpdated={loadDocuments} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -558,6 +558,41 @@ export const api = {
   },
 
   // Super Admin: manajemen user & activity log
+  async getVisitors(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/visitors${query ? `?${query}` : ''}`)
+  },
+
+  async getVisitorStats(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/visitors/stats${query ? `?${query}` : ''}`)
+  },
+
+  async exportVisitors(params = {}) {
+    const token = getToken()
+    const query = new URLSearchParams(params).toString()
+    const response = await fetch(`${API_BASE_URL}/visitors/export${query ? `?${query}` : ''}`, {
+      headers: { Accept: 'text/csv', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.message || `Gagal mengekspor laporan: HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `laporan-buku-tamu-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+
+  getVisitorSignatureUrl(id, which) {
+    return `${API_BASE_URL}/visitors/${id}/signature/${which}?token=${encodeURIComponent(getToken())}`
+  },
+
   async getUserStats() {
     return request('/users/stats')
   },

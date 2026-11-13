@@ -11,6 +11,7 @@ export default function MainLayout({ user, onLogout }) {
   const getActiveMenu = () => {
     if (location.pathname.startsWith('/pengguna')) return 'pengguna';
     if (location.pathname.startsWith('/log-aktivitas')) return 'log-aktivitas';
+    if (location.pathname.startsWith('/laporan-buku-tamu')) return 'laporan-buku-tamu';
     if (location.pathname.startsWith('/pengaturan')) return 'pengaturan';
     if (location.pathname.startsWith('/penghapusan')) return 'dsp03';
     if (location.pathname.startsWith('/berita-acara-pemusnahan') || location.pathname.startsWith('/pemusnahan/berita-acara') || location.pathname.startsWith('/dsp02')) return 'dsp02';
@@ -31,6 +32,7 @@ export default function MainLayout({ user, onLogout }) {
     else if (menu === 'pengaturan') navigate('/pengaturan');
     else if (menu === 'pengguna') navigate('/pengguna');
     else if (menu === 'log-aktivitas') navigate('/log-aktivitas');
+    else if (menu === 'laporan-buku-tamu') navigate('/laporan-buku-tamu');
     else alert('Menu ini belum diimplementasikan di versi routing baru.');
   };
 
