@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import SignatureSelector from '../components/SignatureSelector';
+import DocumentRevisionSection from '../components/DocumentRevisionSection';
 
 export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -419,8 +420,9 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const data = doc.data || {};
   const rawStatus = (doc.status || data.status || 'draft').toLowerCase();
   const isApproved = rawStatus === 'approved' || rawStatus === 'signed' || rawStatus === 'selesai';
-  const isPending = !isApproved && (rawStatus === 'in_review' || rawStatus === 'pending' || rawStatus.includes('menunggu'));
-  const isDraft = !isApproved && !isPending;
+  const isRejected = rawStatus === 'rejected' || rawStatus.includes('tolak');
+  const isPending = !isApproved && !isRejected && (rawStatus === 'in_review' || rawStatus === 'pending' || rawStatus.includes('menunggu'));
+  const isDraft = !isApproved && !isPending && !isRejected;
 
   // Resolve 4 verifikator users from backend
   const v1User = apiUsers.find(u => Number(u.id) === Number(data.verifikator_1_id)) || doc.requester || data.pelaksana || { name: 'Ahmad Fauzi Setiawan', nip: '54892' };
@@ -429,9 +431,35 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const v4User = apiUsers.find(u => Number(u.id) === Number(data.verifikator_4_id)) || data.penanggung_jawab || { name: 'Ir. Bambang Suryo Pratama, M.T.', nip: '48901' };
 
   // Approval chain & active approver validation
+  const document = doc;
+  const currentUser = user;
   const currentApproverId = doc.current_approver_id || doc.penyetuju_id;
   const isCurrentApprover = Boolean(user?.id && currentApproverId && Number(user.id) === Number(currentApproverId));
-  const canAct = isPending && isCurrentApprover;
+
+  const hasUserApproved = Boolean(
+    document?.hasUserApproved ??
+    document?.has_user_approved ??
+    document?.verification_steps?.some(
+      (step) =>
+        Number(step.approver_id) === Number(currentUser?.id) &&
+        step.status === 'approved'
+    )
+  );
+
+  const canVerify = Boolean(
+    document?.can_verify ??
+    (document?.status === 'in_review' &&
+      Number(document?.current_approver_id || document?.penyetuju_id) === Number(currentUser?.id) &&
+      !hasUserApproved)
+  );
+
+  const canRevise = Boolean(
+    document?.can_revise ??
+    (document?.status === 'rejected' &&
+      Number(document?.requester_id || document?.pemohon_id || document?.created_by) === Number(currentUser?.id))
+  );
+
+  const canAct = canVerify;
 
   const chain = doc.data?.approval_chain || [
     doc.data?.verifikator_1_id,
@@ -443,16 +471,24 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
   const currentStepIndex = chain.findIndex(id => Number(id) === Number(currentApproverId));
   const currentStepNumber = currentStepIndex !== -1 ? currentStepIndex + 1 : 1;
   const currentApproverUser = apiUsers.find(u => Number(u.id) === Number(currentApproverId));
-  const approvalsList = doc.approvals || doc.persetujuan || [];
+  const rawApprovalsList = [...(doc.approvals || doc.persetujuan || [])].sort((a, b) => Number(a.step) - Number(b.step));
+  const lastRejectIdx = rawApprovalsList.reduce(
+    (acc, a, idx) => (String(a?.aksi || a?.action || '').toLowerCase() === 'rejected' ? idx : acc),
+    -1
+  );
+  const approvalsList = !isRejected && lastRejectIdx !== -1 ? rawApprovalsList.slice(lastRejectIdx + 1) : rawApprovalsList;
 
   const getStepStatus = (vUser, stepIdx) => {
     if (!vUser?.id) return { isSigned: false, isCurrent: false, label: 'Belum Ditentukan' };
-    const isSigned = isApproved || approvalsList.some(a => 
+    const apiStep = Array.isArray(doc.verification_steps)
+      ? doc.verification_steps.find(vs => Number(vs.step) === stepIdx + 1 || Number(vs.approver_id) === Number(vUser.id))
+      : null;
+    const isSigned = isApproved || (apiStep ? apiStep.status === 'approved' : approvalsList.some(a => 
       Number(a.approver_id || a.user_id) === Number(vUser.id) && 
       (a.action === 'approved' || a.action === 'APPROVED' || a.aksi === 'approved')
-    );
+    ));
     if (isSigned) return { isSigned: true, isCurrent: false, label: 'TTE Selesai (Sah)' };
-    if (isPending && Number(currentApproverId) === Number(vUser.id)) {
+    if (isPending && (apiStep ? Boolean(apiStep.is_current) : Number(currentApproverId) === Number(vUser.id))) {
       return { isSigned: false, isCurrent: true, label: isCurrentApprover ? 'Giliran Anda (Aktif)' : 'Sedang Diproses' };
     }
     return { isSigned: false, isCurrent: false, label: 'Antrean Tahap ' + (stepIdx + 1) };
@@ -585,6 +621,13 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
           </button>
         </div>
       </div>
+
+      {/* Referensi DSP-01, Stepper Verifikasi & Revisi Dokumen */}
+      <DocumentRevisionSection
+        doc={doc}
+        user={user}
+        editRevisiPath={`/berita-acara-pemusnahan/${doc.id}/revisi`}
+      />
 
       {/* VIEW UTAMA: PRATINJAU PDF RESMI DARI ENGINE BACKEND DOMPDF (TANPA MENYIMPAN KE DATABASE) */}
       {activeTab === 'pdf' && (

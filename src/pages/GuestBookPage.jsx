@@ -30,8 +30,9 @@ import {
   UserSearch,
   Copy,
 } from 'lucide-react'
-import { api } from '../services/api'
+import { api, getToken } from '../services/api'
 import Header from '../components/Header'
+import MasterImportActions from '../components/MasterImportActions'
 
 export default function GuestBookPage({ onBackToLogin }) {
   const navigate = useNavigate()
@@ -546,14 +547,22 @@ export default function GuestBookPage({ onBackToLogin }) {
                     <h2 className="text-base font-extrabold text-[#0b2046]">Pencarian nama atau nomor kartu</h2>
                     <p className="mt-0.5 text-sm text-slate-500">Masukkan minimal 3 karakter nama atau nomor kartu tamu.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={openForm}
-                    className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#f05a22] px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#d94a18]"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Tambah Kunjungan
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getToken() && (
+                      <MasterImportActions
+                        module="visitors"
+                        label="Buku Tamu"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={openForm}
+                      className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#f05a22] px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#d94a18]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Tambah Kunjungan
+                    </button>
+                  </div>
                 </div>
 
                 <form

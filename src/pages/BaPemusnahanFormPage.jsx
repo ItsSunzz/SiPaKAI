@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   FileCheck2,
   Plus,
@@ -27,10 +27,13 @@ import {
   ExternalLink,
   Shield,
   Download,
-  Eye
+  Eye,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
+import Dsp01PullModal from '../components/Dsp01PullModal';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 // Preset metode pemusnahan KAI
 const METODE_OPTIONS = [
@@ -59,12 +62,21 @@ const METODE_OPTIONS = [
 export default function BaPemusnahanFormPage({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEditMode = Boolean(id);
+  const isRevisiPath = location.pathname.endsWith('/revisi');
 
   const [isLoading, setIsLoading] = useState(isEditMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Parent DSP-01 & Revision states
+  const [parentId, setParentId] = useState(null);
+  const [parentDocInfo, setParentDocInfo] = useState(null);
+  const [docStatus, setDocStatus] = useState('draft');
+  const [revisionData, setRevisionData] = useState(null);
+  const [catatanRevisi, setCatatanRevisi] = useState('');
 
   // Approver / Users list from backend
   const [apiUsers, setApiUsers] = useState([]);
@@ -72,8 +84,6 @@ export default function BaPemusnahanFormPage({ user }) {
 
   // Modal Import dari DSP-01
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [approvedDsp01List, setApprovedDsp01List] = useState([]);
-  const [isLoadingDsp01, setIsLoadingDsp01] = useState(false);
 
   // Modal PDF Preview (like BAST module)
   const [isPreviewPdfModalOpen, setIsPreviewPdfModalOpen] = useState(false);
@@ -206,9 +216,23 @@ export default function BaPemusnahanFormPage({ user }) {
         const docData = res?.document || res;
         if (docData) {
           const d = docData.data || {};
+          setDocStatus(String(docData.status || 'draft').toLowerCase());
+          if (docData.parent_id || docData.dsp01_id || d.parent_id || d.dsp01_id) {
+            setParentId(docData.parent_id || docData.dsp01_id || d.parent_id || d.dsp01_id);
+          }
+          if (docData.parent_document) {
+            setParentDocInfo(docData.parent_document);
+          }
+
+          if (String(docData.status || '').toLowerCase() === 'rejected' || isRevisiPath) {
+            api.getDocumentRevision(id)
+              .then((revRes) => setRevisionData(revRes?.data || revRes))
+              .catch(() => null);
+          }
+
           setFormData({
             number: docData.number || docData.nomor,
-            nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || docData.ref_number || 'PMH/0001/X/2026',
+            nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || docData.parent_document?.number || docData.ref_number || 'PMH/0001/X/2026',
             business_area: d.business_area || d.wilayah || 'Kantor Pusat Bandung',
             tanggal_pelaksanaan: d.tanggal_pelaksanaan || docData.created_at?.split('T')[0] || '',
             waktu_pelaksanaan: d.waktu_pelaksanaan || '10:00',
@@ -243,75 +267,77 @@ export default function BaPemusnahanFormPage({ user }) {
     };
 
     loadDoc();
-  }, [id, isEditMode]);
+  }, [id, isEditMode, isRevisiPath]);
 
-  // Load Approved DSP-01 Documents for Import
-  const handleOpenImportModal = async () => {
+  // Open DSP-01 Pull Modal
+  const handleOpenImportModal = () => {
     setIsImportModalOpen(true);
-    setIsLoadingDsp01(true);
-    try {
-      const res = await api.getDocuments({ type: 'dsp01' }).catch(() => null);
-      if (res?.data && res.data.length > 0) {
-        setApprovedDsp01List(res.data);
-      } else {
-        // Fallback sample approved DSP-01
-        setApprovedDsp01List([
-          {
-            id: 1,
-            number: 'PMH/0001/X/2026',
-            status: 'approved',
-            requester_name: 'Fajar Prasetyo',
-            requester_unit: 'Kepala Stasiun Gambir',
-            date: '24 Okt 2025',
-            items: [
-              { nama_aset: 'Server Dell PowerEdge R740', id_aset: '104-KAI-SRV-2018', jumlah: 1, satuan: 'Unit', jenis_aset: 'Hardware', alasan: 'Kerusakan fatal motherboard' },
-              { nama_aset: 'Cisco Catalyst 3850 48-Port PoE', id_aset: 'MAC-7721-CC-081', jumlah: 2, satuan: 'Unit', jenis_aset: 'Network', alasan: 'Port modul korsleting sambaran petir' }
-            ]
-          },
-          {
-            id: 2,
-            number: 'PMH/0002/X/2026',
-            status: 'approved',
-            requester_name: 'Ezar Athilla',
-            requester_unit: 'Spv Jaringan TI DAOP 1',
-            date: '22 Okt 2025',
-            items: [
-              { nama_aset: 'Hard Disk SAS 600GB Server Juanda', id_aset: 'AST-HDD-2018-091', jumlah: 6, satuan: 'Unit', jenis_aset: 'Storage', alasan: 'Bad sector masif' },
-              { nama_aset: 'UPS Liebert GXT4 3000VA', id_aset: 'UPS-LIB-3000-09', jumlah: 1, satuan: 'Unit', jenis_aset: 'Hardware', alasan: 'Baterai bocor & inverter rusak' }
-            ]
-          }
-        ]);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoadingDsp01(false);
-    }
   };
 
-  const handleSelectDsp01 = (dspDoc) => {
+  const handleSelectDsp01Prefill = ({ parentId: pId, parentDoc, headerData, items: pulledItems }) => {
+    setParentId(pId);
+    setParentDocInfo(parentDoc);
+
     setFormData(prev => ({
       ...prev,
-      nomor_referensi: dspDoc.number || `PMH/000${dspDoc.id}/X/2026`,
-      business_area: dspDoc.requester_unit || prev.business_area,
+      nomor_referensi:
+        headerData?.nomor_referensi ||
+        parentDoc?.number ||
+        prev.nomor_referensi,
+      business_area:
+        headerData?.business_area ||
+        headerData?.unit_kerja ||
+        parentDoc?.unit_kerja ||
+        prev.business_area,
+      lokasi:
+        headerData?.lokasi ||
+        headerData?.business_area ||
+        prev.lokasi,
     }));
 
-    if (dspDoc.items && dspDoc.items.length > 0) {
-      const mappedItems = dspDoc.items.map((it, idx) => ({
+    if (Array.isArray(pulledItems) && pulledItems.length > 0) {
+      const mappedItems = pulledItems.map((it, idx) => ({
         id: Date.now() + idx,
-        nama_aset: it.nama_aset || it.nama || 'Aset TI Terkait',
+        nama_aset: it.nama_aset || it.nama_barang || it.nama || 'Aset TI Terkait',
         jenis_aset: normalizeJenisAset(it.jenis_aset || it.kategori || it.jenis),
         id_aset: it.id_aset || it.no_inventaris || `AST-KAI-${Date.now()}-${idx + 1}`,
-        jumlah: it.jumlah || 1,
+        jumlah: Number(it.jumlah) || 1,
         satuan: it.satuan || 'Unit',
-        metode_pemusnahan: 'Penghancuran fisik',
-        keterangan: it.alasan_pemusnahan || it.alasan || 'Dimusnahkan sesuai persetujuan DSP-01',
+        metode_pemusnahan: it.metode_pemusnahan || 'Penghancuran fisik',
+        keterangan: it.keterangan || it.alasan_pemusnahan || it.alasan || 'Dimusnahkan sesuai persetujuan DSP-01',
       }));
       setItems(mappedItems);
     }
 
-    setIsImportModalOpen(false);
-    showToast(`Data aset berhasil diimpor dari Permohonan Pemusnahan ${dspDoc.number}`);
+    showToast(`Data aset & referensi berhasil ditarik dari DSP-01 (${parentDoc?.number || pId})`);
+  };
+
+  const handleImportPreviewData = (importedData, importedItems) => {
+    if (importedData && typeof importedData === 'object') {
+      setFormData(prev => ({
+        ...prev,
+        nomor_referensi: importedData.nomor_referensi || prev.nomor_referensi,
+        business_area: importedData.business_area || importedData.unit_kerja || prev.business_area,
+        tanggal_pelaksanaan: importedData.tanggal_pelaksanaan || prev.tanggal_pelaksanaan,
+        waktu_pelaksanaan: importedData.waktu_pelaksanaan || prev.waktu_pelaksanaan,
+        lokasi: importedData.lokasi || prev.lokasi,
+      }));
+    }
+    if (Array.isArray(importedItems) && importedItems.length > 0) {
+      setItems(
+        importedItems.map((it, idx) => ({
+          id: Date.now() + idx,
+          nama_aset: it.nama_aset || it.nama_barang || it.nama || '',
+          jenis_aset: normalizeJenisAset(it.jenis_aset || it.kategori),
+          id_aset: it.id_aset || it.no_inventaris || '',
+          jumlah: Number(it.jumlah) || 1,
+          satuan: it.satuan || 'Unit',
+          metode_pemusnahan: it.metode_pemusnahan || 'Penghancuran fisik',
+          keterangan: it.keterangan || 'Dimusnahkan',
+        }))
+      );
+    }
+    showToast('Data hasil import berhasil dimuat ke dalam form DSP-02.');
   };
 
   // Build Payload according to Backend Schema
@@ -323,10 +349,12 @@ export default function BaPemusnahanFormPage({ user }) {
     return {
       type: 'dsp02',
       submit: submitNow,
+      ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
       approver_id: submitNow ? primaryApproverId : undefined,
       status: submitNow ? 'pending' : 'draft',
       number: formData.number,
       data: {
+        ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
         nomor_referensi: formData.nomor_referensi,
         business_area: formData.business_area,
         tanggal_pelaksanaan: formData.tanggal_pelaksanaan,
@@ -456,15 +484,30 @@ export default function BaPemusnahanFormPage({ user }) {
 
     try {
       let resDoc = null;
-      if (isEditMode) {
+      const isRevisingRejected = isEditMode && (docStatus === 'rejected' || isRevisiPath);
+
+      if (isRevisingRejected && submitNow) {
+        resDoc = await api.reviseDocument(id, {
+          data: payload.data,
+          items: payload.items,
+          catatan_revisi: catatanRevisi.trim() || 'Telah diperbaiki sesuai catatan verifikator.',
+          ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
+        });
+      } else if (isEditMode) {
         resDoc = await api.updateDocument(id, payload);
       } else {
         resDoc = await api.createDocument(payload);
       }
 
-      const createdDocId = resDoc?.document?.id || resDoc?.id || id;
+      const createdDocId = resDoc?.document?.id || resDoc?.data?.id || resDoc?.id || id;
 
-      showToast(submitNow ? 'Berita Acara Pemusnahan berhasil diterbitkan dan diajukan ke sistem!' : 'Draf Berita Acara berhasil disimpan di sistem.');
+      showToast(
+        isRevisingRejected && submitNow
+          ? 'Revisi Berita Acara Pemusnahan berhasil diajukan kembali ke Verifikator 1!'
+          : submitNow
+          ? 'Berita Acara Pemusnahan berhasil diterbitkan dan diajukan ke sistem!'
+          : 'Draf Berita Acara berhasil disimpan di sistem.'
+      );
 
       setTimeout(() => {
         navigate(createdDocId ? `/berita-acara-pemusnahan/${createdDocId}` : '/berita-acara-pemusnahan');
@@ -528,17 +571,85 @@ export default function BaPemusnahanFormPage({ user }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentImportActions
+            type="dsp02"
+            mode="form"
+            parentId={parentId}
+            onPreviewData={handleImportPreviewData}
+            onDraftCreated={(doc) => {
+              const newId = doc?.id || doc?.document?.id;
+              navigate(newId ? `/berita-acara-pemusnahan/${newId}` : '/berita-acara-pemusnahan');
+            }}
+          />
           <button
             type="button"
             onClick={handleOpenImportModal}
-            className="px-4 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs"
+            className="px-4 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs"
           >
             <Sparkles className="w-4 h-4 text-sky-600" />
-            <span>Impor Data Permohonan (DSP-01)</span>
+            <span>Tarik dari Dokumen DSP-01</span>
           </button>
         </div>
       </div>
+
+      {/* Parent DSP-01 Badge */}
+      {(parentId || parentDocInfo) && (
+        <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="px-2 py-0.5 rounded bg-[#003580] text-white text-[10px] font-bold uppercase">
+              Terhubung ke DSP-01
+            </span>
+            <span className="font-mono font-bold text-[#003580]">
+              {parentDocInfo?.number || formData.nomor_referensi}
+            </span>
+            {parentDocInfo?.nama_pemohon && (
+              <span className="text-slate-600">
+                • Pemohon: <strong>{parentDocInfo.nama_pemohon}</strong>
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenImportModal}
+            className="text-[11px] font-bold text-blue-700 hover:underline"
+          >
+            Ganti Referensi DSP-01
+          </button>
+        </div>
+      )}
+
+      {/* Revision Banner when editing a rejected document */}
+      {(docStatus === 'rejected' || isRevisiPath) && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
+          <div className="flex items-start gap-3">
+            <RotateCcw className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-red-900">
+                Mode Revisi Dokumen (DSP-02 Ditolak)
+              </h3>
+              {revisionData?.rejection && (
+                <p className="text-xs text-red-800 mt-1">
+                  <strong>Alasan Penolakan ({revisionData.rejection.approver_name || 'Verifikator'} - Tahap {revisionData.rejection.step || 1}):</strong>{' '}
+                  {revisionData.rejection.note}
+                </p>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-red-900 mb-1">
+              Catatan Perbaikan Revisi <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              rows={2}
+              value={catatanRevisi}
+              onChange={(e) => setCatatanRevisi(e.target.value)}
+              placeholder="Jelaskan perbaikan yang dilakukan pada Berita Acara Pemusnahan ini..."
+              className="w-full px-3 py-2 bg-white border border-red-300 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-red-400"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {errorMessage && (
@@ -1033,82 +1144,13 @@ export default function BaPemusnahanFormPage({ user }) {
         </div>
       </div>
 
-      {/* MODAL: Import dari Permohonan DSP-01 */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">Pilih Berkas Permohonan Pemusnahan (DSP-01)</h3>
-                  <p className="text-[11px] text-slate-500">Hanya menampilkan berkas permohonan yang telah disetujui (Approved).</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {isLoadingDsp01 ? (
-                <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin text-[#003580]" />
-                  <span className="text-xs font-semibold">Memuat dokumen DSP-01 yang telah disetujui...</span>
-                </div>
-              ) : approvedDsp01List.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  Tidak ditemukan dokumen DSP-01 berstatus approved.
-                </div>
-              ) : (
-                approvedDsp01List.map((dsp) => (
-                  <div
-                    key={dsp.id}
-                    onClick={() => handleSelectDsp01(dsp)}
-                    className="p-4 rounded-xl border border-slate-200 hover:border-[#003580] hover:bg-slate-50/70 transition-all cursor-pointer space-y-2 group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-xs text-[#003580] group-hover:underline">
-                        {dsp.number || `PMH/000${dsp.id}/X/2026`}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                        Disetujui Penuh
-                      </span>
-                    </div>
-
-                    <div className="text-xs text-slate-600 flex items-center justify-between">
-                      <span>Pemohon: <strong>{dsp.requester_name || dsp.requester?.name || 'Petugas TI'}</strong></span>
-                      <span className="text-slate-400">{dsp.date || dsp.requester_unit}</span>
-                    </div>
-
-                    {dsp.items && dsp.items.length > 0 && (
-                      <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                        {dsp.items.length} item aset &bull; {dsp.items.map(it => it.nama_aset || it.nama).join(', ')}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL: Tarik dari Permohonan DSP-01 (Approved) */}
+      <Dsp01PullModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        targetType="dsp02"
+        onSelectPrefill={handleSelectDsp01Prefill}
+      />
 
       {/* MODAL: Pratinjau Dokumen Backend DomPDF (seperti modul BAST) */}
       {isPreviewPdfModalOpen && (

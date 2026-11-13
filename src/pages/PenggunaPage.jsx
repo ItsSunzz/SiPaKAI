@@ -4,6 +4,7 @@ import { PlusCircle, Pencil, Search, UserX, UserCheck, CheckCircle2, AlertCircle
 import { api } from '../services/api'
 import TablePagination, { Avatar } from '../components/TablePagination'
 import UserFormModal, { ROLE_LABEL, inputCls } from '../components/UserFormModal'
+import MasterImportActions from '../components/MasterImportActions'
 
 const PER_PAGE = 7
 
@@ -66,7 +67,7 @@ export default function PenggunaPage({ user }) {
     <div>
       {msg && <div className="fixed top-4 right-4 z-[60] px-4 py-2.5 bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-lg">{msg}</div>}
 
-      <div className="flex items-start justify-between gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-6">
         <div className="max-w-md">
           <h1 className="text-3xl font-extrabold text-[#0b2046] tracking-tight">Manajemen Pengguna</h1>
           <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
@@ -74,13 +75,64 @@ export default function PenggunaPage({ user }) {
             pada Aplikasi SIPAKAI secara terpusat dan terstandarisasi.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setModal('new')}
-          className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-white bg-[#ff5a00] hover:bg-[#e65100] shadow-sm transition-colors"
-        >
-          <PlusCircle className="w-4 h-4" /> Tambah Pengguna
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <MasterImportActions
+            module="users"
+            label="Data User"
+            onImported={() => {
+              toast('Import data pengguna berhasil diproses.')
+              load()
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setModal('new')}
+            className="flex items-center gap-2 px-5 py-3 text-xs font-semibold text-white bg-[#ff5a00] hover:bg-[#e65100] rounded-lg shadow-sm transition-colors"
+          >
+            <PlusCircle className="w-4 h-4" /> Tambah Pengguna
+          </button>
+        </div>
+      </div>
+
+      {/* Panel Import Data Master & Operasional (Jabatan, Master Aset, Buku Tamu) */}
+      <div className="mt-5 p-4 bg-white border border-slate-200 rounded-xl shadow-2xs flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xs font-bold text-[#0b2046] uppercase tracking-wider">
+            Pusat Import Data Master & Operasional (CSV / XLSX / JSON)
+          </h2>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Unduh template resmi atau unggah file import untuk Master Jabatan, Master Aset SAP, dan Buku Tamu.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            <span className="text-[11px] font-bold text-slate-700 mr-1">Master Jabatan:</span>
+            <MasterImportActions
+              module="positions"
+              label="Master Jabatan"
+              compact
+              onImported={() => toast('Data Master Jabatan berhasil diimport.')}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            <span className="text-[11px] font-bold text-slate-700 mr-1">Master Aset:</span>
+            <MasterImportActions
+              module="assets"
+              label="Master Aset"
+              compact
+              onImported={() => toast('Data Master Aset berhasil diimport.')}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            <span className="text-[11px] font-bold text-slate-700 mr-1">Buku Tamu:</span>
+            <MasterImportActions
+              module="visitors"
+              label="Buku Tamu"
+              compact
+              onImported={() => toast('Data Buku Tamu berhasil diimport.')}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="relative mt-6 w-72">

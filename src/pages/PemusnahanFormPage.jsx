@@ -26,6 +26,7 @@ import {
   Edit3
 } from 'lucide-react';
 import { api } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 const REVISION_CATEGORY_OPTIONS = [
   'Perbaikan Nomor Seri / ID Aset SAP',
@@ -135,6 +136,20 @@ export default function PemusnahanFormPage({ user }) {
             setIsLockedNonDraft(false);
           }
 
+          if (status === 'rejected' || status === 'ditolak' || isRevisiRoute) {
+            api.getDocumentRevision(id)
+              .then((revRes) => {
+                const revInfo = revRes?.data || revRes;
+                if (revInfo) {
+                  setExistingDoc((prev) => ({
+                    ...(prev || doc),
+                    revision_endpoint_data: revInfo,
+                  }));
+                }
+              })
+              .catch(() => null);
+          }
+
           if (d.nomor_referensi || doc.nomor || doc.number) {
             setReference(d.nomor_referensi || doc.nomor || doc.number || '');
           }
@@ -203,13 +218,14 @@ export default function PemusnahanFormPage({ user }) {
     };
   };
 
-  // Extract rejection details from existingDoc
+  // Extract rejection details from existingDoc or GET /api/documents/{id}/revision
+  const revEndpointRejection = existingDoc?.revision_endpoint_data?.rejection;
   const approvalHistory = existingDoc?.approvals || existingDoc?.persetujuan || [];
   const rejectedApproval = approvalHistory.find(a => (a.action === 'REJECTED' || a.aksi === 'rejected'));
-  const rejectionReason = rejectedApproval?.catatan || rejectedApproval?.note || existingDoc?.data?.catatan_penolakan || 'Mohon periksa kembali kelengkapan nomor seri aset, spesifikasi perangkat, serta kesesuaian nomor referensi Nota Dinas pendukung.';
-  const rejectedBy = rejectedApproval?.approver?.nama || rejectedApproval?.approver?.name || 'Pejabat Verifikator Otorisator';
+  const rejectionReason = revEndpointRejection?.note || rejectedApproval?.catatan || rejectedApproval?.note || existingDoc?.data?.catatan_penolakan || 'Mohon periksa kembali kelengkapan nomor seri aset, spesifikasi perangkat, serta kesesuaian nomor referensi Nota Dinas pendukung.';
+  const rejectedBy = revEndpointRejection?.approver_name || rejectedApproval?.approver?.nama || rejectedApproval?.approver?.name || 'Pejabat Verifikator Otorisator';
   const rejectedByJabatan = (typeof rejectedApproval?.approver?.jabatan === 'object' ? rejectedApproval?.approver?.jabatan?.nama : rejectedApproval?.approver?.jabatan) || '';
-  const rejectedStep = rejectedApproval?.step || 1;
+  const rejectedStep = revEndpointRejection?.step || rejectedApproval?.step || 1;
   const rejectedDateRaw = rejectedApproval?.acted_at || existingDoc?.updated_at;
   const rejectedDateDisplay = rejectedDateRaw
     ? new Date(rejectedDateRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -365,7 +381,24 @@ export default function PemusnahanFormPage({ user }) {
       };
 
       let resDoc = null;
-      if (isEditMode) {
+      if (isEditMode && isRevisionMode && submitNow) {
+        try {
+          resDoc = await api.reviseDocument(id, {
+            data: payload.data,
+            items: payload.items,
+            catatan_revisi: revisionNote.trim(),
+          });
+        } catch {
+          resDoc = await api.updateDocument(id, payload);
+          if (v1Num) {
+            const subRes = await api.submitDocument(id, {
+              approver_id: v1Num,
+              note: `Revisi Permohonan (#${nextRevisiCount}): ${revisionNote.trim()}`,
+            }).catch(() => null);
+            if (subRes) resDoc = subRes;
+          }
+        }
+      } else if (isEditMode) {
         try {
           resDoc = await api.updateDocument(id, payload);
           if (submitNow && v1Num) {
@@ -379,8 +412,6 @@ export default function PemusnahanFormPage({ user }) {
           }
         } catch (updateErr) {
           if (isRevisionMode) {
-            // Fallback jika backend mengunci dokumen berstatus rejected dari update langsung:
-            // buat dokumen pengajuan revisi baru yang merujuk ke dokumen yang ditolak
             resDoc = await api.createDocument({
               ...payload,
               data: {
@@ -498,12 +529,43 @@ export default function PemusnahanFormPage({ user }) {
               : 'Formulir ini digunakan oleh unit kerja untuk mengajukan permohonan disposisi/pemusnahan aset TI PT Kereta Api Indonesia (Persero).'}
           </p>
         </div>
-        <button
-          onClick={() => navigate('/pemusnahan')}
-          className="self-start md:self-auto px-4 py-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
-        >
-          ← Kembali ke Daftar
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <DocumentImportActions
+            type="dsp01"
+            mode="form"
+            onPreviewData={(importedData, importedItems) => {
+              if (importedData?.nomor_referensi) setReference(importedData.nomor_referensi);
+              if (Array.isArray(importedItems) && importedItems.length > 0) {
+                setAssets(
+                  importedItems.map((it, idx) => ({
+                    id: Date.now() + idx,
+                    nama: it.nama_aset || it.nama || '',
+                    jenis: it.jenis_aset
+                      ? it.jenis_aset === 'Jaringan'
+                        ? 'Jaringan (Network)'
+                        : it.jenis_aset === 'Informasi'
+                        ? 'Lisensi/Software'
+                        : 'Fisik (Hardware)'
+                      : 'Fisik (Hardware)',
+                    sn: it.id_aset || it.no_inventaris || it.sn || '',
+                    alasan: it.alasan_pemusnahan || it.alasan || it.keterangan || '',
+                  }))
+                );
+              }
+              setSubmitSuccess('Data hasil import berhasil dimuat ke dalam formulir DSP-01.');
+            }}
+            onDraftCreated={(doc) => {
+              const newId = doc?.id || doc?.document?.id;
+              navigate(newId ? `/pemusnahan/${newId}` : '/pemusnahan');
+            }}
+          />
+          <button
+            onClick={() => navigate('/pemusnahan')}
+            className="px-4 py-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+          >
+            ← Kembali ke Daftar
+          </button>
+        </div>
       </div>
 
       {/* Info Banner */}

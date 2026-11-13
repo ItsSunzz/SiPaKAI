@@ -21,6 +21,7 @@ import {
 import { api, fallbackDocuments } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
 import DocumentDetailModal from '../components/DocumentDetailModal';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 const formatJabatanText = (jabatan) => {
   if (!jabatan) return '';
@@ -154,9 +155,13 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
           }
 
           return {
+            ...doc,
             ...rawDoc,
             id: doc.id,
             number: docNum,
+            can_verify: doc.can_verify,
+            can_revise: doc.can_revise,
+            verification_steps: doc.verification_steps,
             inventory_code: doc.data?.id_aset || doc.data?.no_inventaris || `AST-KAI-${doc.id}`,
             type: doc.type || doc.tipe || 'dsp01',
             category_label: doc.type === 'dsp01' ? 'Permohonan Pemusnahan Aset TI' :
@@ -269,6 +274,15 @@ export default function PemusnahanListPage({ user, onReviewDocument, onViewDocum
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentImportActions
+            type="dsp01"
+            mode="list"
+            onDraftCreated={(doc) => {
+              fetchDocs();
+              const newId = doc?.id || doc?.document?.id;
+              if (newId) navigate(`/pemusnahan/${newId}/review`);
+            }}
+          />
           <button 
             type="button" 
             onClick={fetchDocs} 

@@ -33,6 +33,7 @@ import {
 import { api } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
 import SignatureSelector from '../components/SignatureSelector';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 // Preset aplikasi KAI untuk percepat input
 const KAI_APP_PRESETS = [
@@ -101,6 +102,7 @@ export default function BastAplikasiFormPage({ user }) {
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [docStatus, setDocStatus] = useState('draft');
 
   // Metode Tanda Tangan Penerima: 'digital' (Full Sistem) | 'manual' (Cetak & Materai Fisik)
   const [metodeTtd, setMetodeTtd] = useState('digital');
@@ -203,6 +205,61 @@ export default function BastAplikasiFormPage({ user }) {
       }));
     }
   }, [user, id]);
+
+  useEffect(() => {
+    if (!isEditMode || !id) return;
+    async function loadExistingHo02() {
+      setIsLoading(true);
+      try {
+        const res = await api.getDocument(id);
+        const doc = res?.data || res?.document || res;
+        if (doc) {
+          setDocStatus((doc.status || 'draft').toLowerCase());
+          const d = doc.data || {};
+          setDocMeta((prev) => ({
+            ...prev,
+            no_dokumen: d.no_dokumen || prev.no_dokumen,
+            tanggal_terbit: d.tanggal_terbit || prev.tanggal_terbit,
+            versi: d.versi || prev.versi,
+            no_ref: d.ref_number || d.no_ref || prev.no_ref,
+            tanggal_ref: d.tanggal_ref || prev.tanggal_ref,
+            business_area: d.business_area || prev.business_area,
+            hari_pelaksanaan: d.hari_pelaksanaan || prev.hari_pelaksanaan,
+            tanggal_pelaksanaan: d.tanggal_pelaksanaan || prev.tanggal_pelaksanaan,
+          }));
+          if (d.penyerah) setPenyerah((prev) => ({ ...prev, ...d.penyerah }));
+          if (d.penerima) setPenerima((prev) => ({ ...prev, ...d.penerima }));
+          if (d.metode_ttd) setMetodeTtd(d.metode_ttd);
+          if (d.keperluan) setKeperluan(d.keperluan);
+          if (d.masa_aktif || d.masa_aktif_mulai) {
+            setMasaAktif((prev) => ({
+              ...prev,
+              mulai: d.masa_aktif?.mulai || d.masa_aktif_mulai || prev.mulai,
+              sampai: d.masa_aktif?.sampai || d.masa_aktif_sampai || prev.sampai,
+              selesai: d.masa_aktif?.selesai || d.masa_aktif_selesai || d.masa_aktif_sampai || prev.selesai,
+            }));
+          }
+          const rawAccounts = Array.isArray(doc.items) && doc.items.length > 0 ? doc.items : d.accounts;
+          if (Array.isArray(rawAccounts) && rawAccounts.length > 0) {
+            setAccounts(
+              rawAccounts.map((acc, idx) => ({
+                id: acc.id || idx + 1,
+                nama_aplikasi: acc.nama_aplikasi || acc.aplikasi || '',
+                username: acc.username || '',
+                password: acc.password || '',
+                show_password: false,
+              }))
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Gagal memuat dokumen HO-02:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadExistingHo02();
+  }, [isEditMode, id]);
 
   // 3. User Aplikasi yang Diserahkan (Tabel Akun)
   const [accounts, setAccounts] = useState([
@@ -468,8 +525,25 @@ export default function BastAplikasiFormPage({ user }) {
         }
       };
 
-      const res = await api.createDocument(payload);
-      showToast(asDraft ? 'Draf BAST User Aplikasi berhasil disimpan.' : 'BAST User Aplikasi berhasil disahkan dan dikirim ke pihak penerima.');
+      if (isEditMode && id) {
+        if (docStatus === 'rejected' && !asDraft) {
+          await api.reviseDocument(id, {
+            data: payload.data,
+            items: payload.items,
+            catatan_revisi: 'Telah diperbaiki dan diajukan ulang melalui form BAST User Aplikasi (HO-02)',
+          });
+          showToast('Revisi BAST User Aplikasi berhasil dikirim ulang ke Verifikator 1.');
+        } else {
+          await api.updateDocument(id, payload);
+          if (!asDraft) {
+            await api.submitDocument(id).catch(() => null);
+          }
+          showToast(asDraft ? 'Perubahan draf BAST User Aplikasi berhasil disimpan.' : 'BAST User Aplikasi berhasil diperbarui dan diajukan.');
+        }
+      } else {
+        await api.createDocument(payload);
+        showToast(asDraft ? 'Draf BAST User Aplikasi berhasil disimpan.' : 'BAST User Aplikasi berhasil disahkan dan dikirim ke pihak penerima.');
+      }
       setTimeout(() => {
         navigate('/bast-aplikasi');
       }, 1200);
@@ -520,10 +594,41 @@ export default function BastAplikasiFormPage({ user }) {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <DocumentImportActions
+            type="ho02"
+            mode="form"
+            onImportedPreview={({ data: importedData, items: importedItems }) => {
+              if (importedData && typeof importedData === 'object') {
+                setDocMeta((prev) => ({
+                  ...prev,
+                  no_ref: importedData.ref_number || importedData.no_ref || prev.no_ref,
+                  tanggal_ref: importedData.tanggal_ref || prev.tanggal_ref,
+                  business_area: importedData.business_area || prev.business_area,
+                }));
+                if (importedData.penyerah) setPenyerah((prev) => ({ ...prev, ...importedData.penyerah }));
+                if (importedData.penerima) setPenerima((prev) => ({ ...prev, ...importedData.penerima }));
+                if (importedData.keperluan) setKeperluan(importedData.keperluan);
+              }
+              if (Array.isArray(importedItems) && importedItems.length > 0) {
+                setAccounts(
+                  importedItems.map((it, idx) => ({
+                    id: idx + 1,
+                    nama_aplikasi: it.nama_aplikasi || it.aplikasi || '',
+                    username: it.username || '',
+                    password: it.password || '',
+                    show_password: false,
+                  }))
+                );
+              }
+            }}
+            onDraftCreated={(doc) => {
+              if (doc?.id) navigate(`/bast-aplikasi/${doc.id}/edit`);
+            }}
+          />
           <button
             type="button"
-            onClick={handleOpenPreviewPdf}
+            onClick={() => handleOpenPreviewPdf()}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition-colors"
           >
             <FileText className="w-4 h-4 text-sky-600" />

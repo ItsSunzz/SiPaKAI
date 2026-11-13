@@ -25,6 +25,7 @@ import {
   Filter
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 export default function BastAplikasiListPage({ user }) {
   const navigate = useNavigate();
@@ -257,6 +258,17 @@ export default function BastAplikasiListPage({ user }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <DocumentImportActions
+              type="ho02"
+              mode="list"
+              onDraftCreated={(doc) => {
+                if (doc?.id) {
+                  navigate(`/bast-aplikasi/${doc.id}/edit`);
+                } else {
+                  loadDocuments();
+                }
+              }}
+            />
             <button
               type="button"
               onClick={() => navigate('/bast-aplikasi/create')}
@@ -412,6 +424,7 @@ export default function BastAplikasiListPage({ user }) {
                   const isApproved = status === 'approved' || status === 'signed' || status === 'selesai';
                   const isPending = status === 'pending' || status === 'in_review';
                   const isDraft = status === 'draft' || status === 'draf';
+                  const isRejected = status === 'rejected';
 
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50/70 transition-colors">
@@ -518,6 +531,12 @@ export default function BastAplikasiListPage({ user }) {
                             Draf Pengajuan
                           </span>
                         )}
+                        {isRejected && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            Ditolak (Perlu Revisi)
+                          </span>
+                        )}
                       </td>
 
                       {/* 9. Aksi */}
@@ -568,6 +587,19 @@ export default function BastAplikasiListPage({ user }) {
                               title="Edit Draf"
                             >
                               <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Revisi jika ditolak */}
+                          {isRejected && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/bast-aplikasi/${doc.id}/revisi`)}
+                              className="px-2 py-1 text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-md shadow-2xs transition-colors flex items-center gap-1"
+                              title="Revisi Dokumen"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Revisi</span>
                             </button>
                           )}
                         </div>

@@ -142,7 +142,16 @@ function AppContent() {
       setIsAuthChecking(false);
     };
     initAuth();
-  }, []);
+
+    const handleUnauthorized = () => {
+      setToken(null);
+      setIsAuthenticated(false);
+      setUserProfile(null);
+      navigate('/', { replace: true });
+    };
+    window.addEventListener('sipakai:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('sipakai:unauthorized', handleUnauthorized);
+  }, [navigate]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -370,6 +379,7 @@ function AppContent() {
           <Route path="berita-acara-pemusnahan" element={<BaPemusnahanListPage user={userProfile} />} />
           <Route path="berita-acara-pemusnahan/create" element={<BaPemusnahanFormPage user={userProfile} />} />
           <Route path="berita-acara-pemusnahan/:id/edit" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="berita-acara-pemusnahan/:id/revisi" element={<BaPemusnahanFormPage user={userProfile} />} />
           <Route path="berita-acara-pemusnahan/:id" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="berita-acara-pemusnahan/:id/review" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           {/* Aliases for Berita Acara Pemusnahan */}
@@ -378,26 +388,33 @@ function AppContent() {
           <Route path="pemusnahan/berita-acara/:id" element={<BaPemusnahanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="dsp02" element={<BaPemusnahanListPage user={userProfile} />} />
           <Route path="dsp02/create" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="dsp02/:id/edit" element={<BaPemusnahanFormPage user={userProfile} />} />
+          <Route path="dsp02/:id/revisi" element={<BaPemusnahanFormPage user={userProfile} />} />
           {/* Penghapusan Aset TI (DSP-03) */}
           <Route path="penghapusan" element={<PenghapusanListPage user={userProfile} />} />
           <Route path="penghapusan/create" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="penghapusan/:id/edit" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="penghapusan/:id/revisi" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="penghapusan/:id" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="penghapusan/:id/review" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           {/* Aliases for Penghapusan Aset TI */}
           <Route path="dsp03" element={<PenghapusanListPage user={userProfile} />} />
           <Route path="dsp03/create" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="dsp03/:id/edit" element={<PenghapusanFormPage user={userProfile} />} />
+          <Route path="dsp03/:id/revisi" element={<PenghapusanFormPage user={userProfile} />} />
           <Route path="dsp03/:id" element={<PenghapusanPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           
           {/* BAST Barang (HO-01) */}
           <Route path="bast-barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast-barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast-barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast-barang/:id/revisi" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast-barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast-barang/:id/review" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast/barang" element={<BastBarangListPage user={userProfile} />} />
           <Route path="bast/barang/create" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast/barang/:id/edit" element={<BastBarangFormPage user={userProfile} />} />
+          <Route path="bast/barang/:id/revisi" element={<BastBarangFormPage user={userProfile} />} />
           <Route path="bast/barang/:id" element={<BastPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
 
           {/* Alias pengetikan dengan spasi untuk BAST Barang */}
@@ -412,11 +429,13 @@ function AppContent() {
           <Route path="bast-aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
           <Route path="bast-aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast-aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast-aplikasi/:id/revisi" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast-aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast-aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast/aplikasi" element={<BastAplikasiListPage user={userProfile} />} />
           <Route path="bast/aplikasi/create" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast/aplikasi/:id/edit" element={<BastAplikasiFormPage user={userProfile} />} />
+          <Route path="bast/aplikasi/:id/revisi" element={<BastAplikasiFormPage user={userProfile} />} />
           <Route path="bast/aplikasi/:id" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
           <Route path="bast/aplikasi/:id/review" element={<BastAplikasiPreviewPage user={userProfile} onDocumentUpdated={loadDocuments} />} />
 

@@ -19,6 +19,7 @@ import {
   FileEdit
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 export default function BastBarangListPage({ user }) {
   const navigate = useNavigate();
@@ -169,7 +170,9 @@ export default function BastBarangListPage({ user }) {
           // Check if user is the pending signer (second party)
           const isUserPenyerah = user?.id && Number(doc.penyerah_user_id) === Number(user.id);
           const isUserCreator = user?.id && Number(doc.created_by) === Number(user.id);
-          const canSign = (doc.status === 'in_review' || !doc.status) && (isAdminOrSuper || isUserPenyerah || !isUserCreator);
+          const canSign = typeof doc.can_verify === 'boolean'
+            ? doc.can_verify
+            : ((doc.status === 'in_review' || !doc.status) && (isAdminOrSuper || isUserPenyerah || !isUserCreator));
 
           return {
             ...rawDoc,
@@ -189,6 +192,8 @@ export default function BastBarangListPage({ user }) {
             status: doc.second_party_signed ? 'approved' : (doc.status || 'in_review'),
             status_label: statusText,
             can_sign: canSign,
+            can_verify: doc.can_verify,
+            can_revise: doc.can_revise,
           };
         });
 
@@ -270,7 +275,18 @@ export default function BastBarangListPage({ user }) {
             Kelola berkas Berita Acara Serah Terima Barang, validasi tanda tangan dua belah pihak secara digital, dan pantau status mutasi aset TI PT Kereta Api Indonesia (Persero).
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <DocumentImportActions
+            type="ho01"
+            mode="list"
+            onDraftCreated={(doc) => {
+              if (doc?.id) {
+                navigate(`/bast-barang/${doc.id}/edit`);
+              } else {
+                fetchDocs();
+              }
+            }}
+          />
           <button 
             type="button"
             onClick={fetchDocs}
@@ -604,6 +620,26 @@ export default function BastBarangListPage({ user }) {
                               onClick={() => handleOpenDetail(doc)}
                               className="inline-flex items-center p-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer"
                               title="Lihat Pratinjau Draf"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                          </>
+                        ) : isRejected && (doc.can_revise || doc.created_by === user?.id || isAdminOrSuper) ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/bast-barang/${doc.id}/revisi`)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer bg-rose-600 hover:bg-rose-700 text-white"
+                              title="Revisi Dokumen Ditolak"
+                            >
+                              <FileEdit className="w-3.5 h-3.5" />
+                              <span>Revisi Dokumen</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetail(doc)}
+                              className="inline-flex items-center p-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer"
+                              title="Lihat Rincian"
                             >
                               <Eye className="w-3.5 h-3.5 text-slate-500" />
                             </button>

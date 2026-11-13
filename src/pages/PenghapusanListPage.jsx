@@ -20,9 +20,11 @@ import {
   UserCheck,
   Calendar,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 export default function PenghapusanListPage({ user }) {
   const navigate = useNavigate();
@@ -289,7 +291,16 @@ export default function PenghapusanListPage({ user }) {
             Kelola formulir pencatatan de-registrasi dan penghapusan aset TI dari buku aktiva tetap PT Kereta Api Indonesia (Persero).
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentImportActions
+            type="dsp03"
+            mode="list"
+            onDraftCreated={(doc) => {
+              fetchDocs();
+              const newId = doc?.id || doc?.document?.id;
+              if (newId) navigate(`/penghapusan/${newId}`);
+            }}
+          />
           <button 
             type="button"
             onClick={fetchDocs}
@@ -298,14 +309,6 @@ export default function PenghapusanListPage({ user }) {
           >
             <RefreshCw className={`w-4 h-4 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Segarkan</span>
-          </button>
-          <button 
-            type="button"
-            onClick={() => alert('Fitur Ekspor XLS/PDF sedang disiapkan')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50 transition-colors shadow-2xs"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>Ekspor Data</span>
           </button>
           <button 
             type="button"
@@ -606,14 +609,30 @@ export default function PenghapusanListPage({ user }) {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </>
+                      ) : (doc.can_revise || (isRejected && user && (String(doc.user_id || doc.requester?.id || '') === String(user.id) || user.role === 'super_admin'))) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/penghapusan/${doc.id}/revisi`);
+                          }}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Revisi Dokumen</span>
+                        </button>
                       ) : (
                         <button
                           type="button"
                           onClick={() => handleOpenReview(doc)}
-                          className="px-3.5 py-1.5 bg-[#0b2046] hover:bg-[#15336c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs ${
+                            doc.can_verify
+                              ? 'bg-[#f05a22] hover:bg-[#d94a18] text-white'
+                              : 'bg-[#0b2046] hover:bg-[#15336c] text-white'
+                          }`}
                         >
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Detail &amp; TTE</span>
+                          <span>{doc.can_verify ? 'Verifikasi & TTE' : 'Detail & TTE'}</span>
                         </button>
                       )}
                     </div>

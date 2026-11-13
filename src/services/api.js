@@ -104,6 +104,12 @@ async function request(endpoint, options = {}) {
   })
 
   if (!response.ok) {
+    if (response.status === 401 && !endpoint.startsWith('/auth/login')) {
+      setToken(null)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sipakai:unauthorized'))
+      }
+    }
     const errorData = await response.json().catch(() => ({}))
     const error = new Error(errorData.message || `HTTP ${response.status}: Permintaan gagal`)
     error.status = response.status
@@ -114,12 +120,51 @@ async function request(endpoint, options = {}) {
   return response.json()
 }
 
+async function downloadFileFromEndpoint(endpoint, defaultFilename) {
+  const token = getToken()
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      setToken(null)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sipakai:unauthorized'))
+      }
+    }
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.message || `Gagal mengunduh template (HTTP ${response.status})`)
+  }
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="?([^";]+)"?/i)
+  const filename = match?.[1] || defaultFilename
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   // Auth
-  async login(login, password, role = null) {
+  async login(identifier, password, role = null) {
+    const cleanId = String(identifier || '').trim()
     const data = await request('/auth/login', {
       method: 'POST',
-      body: { login, password, role },
+      body: {
+        login: cleanId,
+        nip: cleanId,
+        username: cleanId,
+        password,
+        ...(role ? { role } : {}),
+      },
     })
 
     if (data.token) {
@@ -145,19 +190,41 @@ export const api = {
     })
   },
 
-  // Forgot Password
-  async requestPasswordReset(email) {
+  // Forgot Password ({ email } atau { nip })
+  async requestPasswordReset(identifier) {
+    let body = {}
+    if (identifier && typeof identifier === 'object') {
+      body = identifier
+    } else {
+      const val = String(identifier || '').trim()
+      body = val.includes('@') ? { email: val } : { nip: val }
+    }
     return request('/forgot-password', {
       method: 'POST',
-      body: { email },
+      body,
     })
   },
 
-  // Reset Password
+  // Reset Password ({ token, email/nip, password, password_confirmation })
   async resetPassword(payload) {
+    const body = {
+      token: payload.token,
+      password: payload.password,
+      password_confirmation: payload.password_confirmation,
+    }
+    const idVal = String(payload.email || payload.nip || '').trim()
+    if (payload.email && String(payload.email).includes('@')) {
+      body.email = String(payload.email).trim()
+    } else if (payload.nip) {
+      body.nip = String(payload.nip).trim()
+    } else if (idVal.includes('@')) {
+      body.email = idVal
+    } else if (idVal) {
+      body.nip = idVal
+    }
     return request('/reset-password', {
       method: 'POST',
-      body: payload,
+      body,
     })
   },
 
@@ -255,6 +322,78 @@ export const api = {
     })
   },
 
+  // 1. Penarikan Dokumen DSP-01 (approved) ke DSP-02 & DSP-03
+  async getApprovedDsp01(params = {}) {
+    const cleanParams = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') cleanParams[k] = v
+    })
+    const query = new URLSearchParams(cleanParams).toString()
+    return request(`/documents/approved-dsp01${query ? `?${query}` : ''}`)
+  },
+
+  async pullDocumentFromDsp01(id, targetType = 'dsp02') {
+    const query = new URLSearchParams({ target_type: targetType }).toString()
+    return request(`/documents/${id}/pull?${query}`)
+  },
+
+  // 2. Fitur Import (CSV, XLSX, JSON) Modul Dokumen & Master/Operasional
+  async downloadDocumentImportTemplate(type) {
+    return downloadFileFromEndpoint(
+      `/documents/import-template?type=${encodeURIComponent(type)}`,
+      `template-import-${type}.csv`
+    )
+  },
+
+  async importDocument({ type, file, previewOnly = false, save = false, parentId = null }) {
+    const formData = new FormData()
+    formData.append('type', type)
+    formData.append('file', file)
+    if (previewOnly) {
+      formData.append('preview_only', '1')
+      formData.append('save', '0')
+    } else if (save) {
+      formData.append('save', '1')
+      formData.append('preview_only', '0')
+    }
+    if (parentId) {
+      formData.append('parent_id', String(parentId))
+      formData.append('dsp01_id', String(parentId))
+    }
+    return request('/documents/import', {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  async downloadMasterImportTemplate(moduleName) {
+    return downloadFileFromEndpoint(
+      `/${moduleName}/import-template`,
+      `template-import-${moduleName}.csv`
+    )
+  },
+
+  async importMasterData(moduleName, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request(`/${moduleName}/import`, {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  // 3. Alur Revisi Dokumen (rejected)
+  async getDocumentRevision(id) {
+    return request(`/documents/${id}/revision`)
+  },
+
+  async reviseDocument(id, payload) {
+    return request(`/documents/${id}/revise`, {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
   async previewPdf(payload) {
     const token = getToken();
     const res = await fetch(`${API_BASE_URL}/documents/preview-pdf`, {
@@ -290,9 +429,10 @@ export const api = {
     return await res.blob();
   },
 
-  async downloadDocumentPdf(id, filename) {
+  async downloadDocumentPdf(id, filename, template = null) {
     const token = getToken();
-    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf`, {
+    const templateParam = template ? `?template=${encodeURIComponent(template)}` : '';
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/pdf${templateParam}`, {
       headers: {
         Accept: 'application/pdf',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

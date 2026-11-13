@@ -196,7 +196,7 @@ export default function ForgotPasswordPage({ onBackToLogin }) {
                   htmlFor="email"
                   className="mb-2 block text-[11px] font-bold tracking-wide text-slate-700"
                 >
-                  ALAMAT EMAIL
+                  ALAMAT EMAIL ATAU NIP
                   <span className="ml-1 text-[#f05a22]">*</span>
                 </label>
 
@@ -208,11 +208,11 @@ export default function ForgotPasswordPage({ onBackToLogin }) {
 
                   <input
                     id="email"
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Masukkan email akun Anda"
-                    autoComplete="email"
+                    placeholder="Masukkan email atau NIP akun Anda"
+                    autoComplete="username"
                     required
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-[#f05a22] focus:bg-white focus:ring-4 focus:ring-orange-100"
                   />

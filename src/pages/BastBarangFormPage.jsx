@@ -33,6 +33,8 @@ import {
   Image
 } from 'lucide-react';
 import { api } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
+import MasterImportActions from '../components/MasterImportActions';
 // Default master pegawai list (can be extended later)
 const DEFAULT_MASTER_PEGAWAI = [];
 
@@ -225,7 +227,7 @@ export default function BastBarangFormPage({ user }) {
         setExistingDoc(doc);
 
         const status = (doc?.status || '').toLowerCase();
-        if (status && status !== 'draft' && status !== 'draf') {
+        if (status && status !== 'draft' && status !== 'draf' && status !== 'rejected' && status !== 'ditolak') {
           setIsLockedNonDraft(true);
         }
 
@@ -776,20 +778,29 @@ export default function BastBarangFormPage({ user }) {
       let targetDocId = id;
 
       if (isEditMode) {
-        // A. Perbarui data formulir draf terlebih dahulu
-        await api.updateDocument(id, {
-          data: payload.data,
-          items: payload.items,
-        });
-
-        // B. Jika user mengesahkan & tanda tangan langsung, panggil endpoint submit agar status resmi menjadi in_review
-        if (submitNow) {
-          res = await api.submitDocument(id, {
-            approver_id: secondPartyId,
-            penyerah_user_id: secondPartyId,
-            signature_pin: String(signaturePin).trim(),
-            note: note && note.trim() ? note.trim() : null,
+        const isRejectedDoc = String(existingDoc?.status || '').toLowerCase() === 'rejected';
+        if (isRejectedDoc && submitNow) {
+          res = await api.reviseDocument(id, {
+            data: payload.data,
+            items: payload.items,
+            catatan_revisi: note && note.trim() ? note.trim() : 'Telah diperbaiki sesuai catatan.',
           });
+        } else {
+          // A. Perbarui data formulir draf terlebih dahulu
+          await api.updateDocument(id, {
+            data: payload.data,
+            items: payload.items,
+          });
+
+          // B. Jika user mengesahkan & tanda tangan langsung, panggil endpoint submit agar status resmi menjadi in_review
+          if (submitNow) {
+            res = await api.submitDocument(id, {
+              approver_id: secondPartyId,
+              penyerah_user_id: secondPartyId,
+              signature_pin: String(signaturePin).trim(),
+              note: note && note.trim() ? note.trim() : null,
+            });
+          }
         }
       } else {
         // Buat dokumen baru di server
@@ -865,6 +876,46 @@ export default function BastBarangFormPage({ user }) {
               ? 'Anda sedang mengedit berkas draf BAST. Perubahan data dapat disimpan kembali sebagai draf atau langsung disahkan & ditandatangani secara digital.'
               : 'Berita Acara Serah Terima Barang / Perangkat Keras TI antar pegawai PT Kereta Api Indonesia (Persero). Dokumen langsung ditandatangani oleh pembuat dan diteruskan langsung ke pihak penandatangan kedua tanpa alur approval bertingkat.'}
           </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <DocumentImportActions
+            type="ho01"
+            mode="form"
+            onPreviewData={(importedData, importedItems) => {
+              if (importedData && typeof importedData === 'object') {
+                setGeneralData((prev) => ({
+                  tanggal_serah_terima: importedData.tanggal_serah_terima || prev.tanggal_serah_terima,
+                  tempat_serah_terima: importedData.tempat_serah_terima || prev.tempat_serah_terima,
+                  nama_unit: importedData.nama_unit || prev.nama_unit,
+                  wilayah: importedData.wilayah || prev.wilayah,
+                }));
+                if (importedData.penyerah) {
+                  setPenyerah((prev) => ({ ...prev, ...importedData.penyerah }));
+                }
+                if (importedData.penerima) {
+                  setPenerima((prev) => ({ ...prev, ...importedData.penerima }));
+                }
+              }
+              if (Array.isArray(importedItems) && importedItems.length > 0) {
+                setItems(
+                  importedItems.map((it, idx) => ({
+                    id: Date.now() + idx,
+                    nama_barang: it.nama_barang || it.nama_aset || '',
+                    brand_series: it.brand_series || it.brand || '',
+                    no_inventaris: it.no_inventaris || it.id_aset || '',
+                    serial_number: it.serial_number || it.serial_nomor || '',
+                    keterangan: it.keterangan || '',
+                  }))
+                );
+              }
+              setSubmitSuccess('Data hasil import berhasil dimuat ke dalam formulir HO-01.');
+            }}
+            onDraftCreated={(doc) => {
+              const newId = doc?.id || doc?.document?.id;
+              navigate(newId ? `/bast-barang/${newId}` : '/bast-barang');
+            }}
+          />
         </div>
       </div>
 
@@ -1936,14 +1987,22 @@ export default function BastBarangFormPage({ user }) {
               </button>
             </div>
 
-            <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-              <Search className="w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                value={sapSearchTerm}
-                onChange={(e) => setSapSearchTerm(e.target.value)}
-                placeholder="Cari nomor inventaris atau nama perangkat..."
-                className="w-full text-xs bg-transparent focus:outline-none text-slate-800"
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={sapSearchTerm}
+                  onChange={(e) => setSapSearchTerm(e.target.value)}
+                  placeholder="Cari nomor inventaris atau nama perangkat..."
+                  className="w-full text-xs bg-transparent focus:outline-none text-slate-800"
+                />
+              </div>
+              <MasterImportActions
+                module="assets"
+                label="Master Aset"
+                compact
+                onImported={() => handleOpenSapModal()}
               />
             </div>
 

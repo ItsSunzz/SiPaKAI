@@ -33,6 +33,7 @@ import {
 import { api, fallbackDocuments } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
 import SignatureSelector from '../components/SignatureSelector';
+import DocumentRevisionSection from '../components/DocumentRevisionSection';
 
 export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -638,6 +639,14 @@ export default function BastAplikasiPreviewPage({ user, onDocumentUpdated }) {
           </button>
         </div>
       )}
+
+      {/* Multi-Verifikator & Revisi Section */}
+      <DocumentRevisionSection
+        doc={doc}
+        user={user}
+        editRevisiPath={`/bast-aplikasi/${doc.id}/revisi`}
+        onRevised={() => fetchDoc()}
+      />
 
       {/* Status Bar */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-wrap items-center justify-between gap-4">

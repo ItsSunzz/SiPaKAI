@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   FileText,
   Plus,
@@ -23,20 +23,33 @@ import {
   ClipboardList,
   ShieldCheck,
   Lock,
-  PenTool
+  PenTool,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
 import SignatureSelector from '../components/SignatureSelector';
+import Dsp01PullModal from '../components/Dsp01PullModal';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 export default function PenghapusanFormPage({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEditMode = Boolean(id);
+  const isRevisiPath = location.pathname.endsWith('/revisi');
 
   const [isLoading, setIsLoading] = useState(isEditMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Parent DSP-01 & Revision states
+  const [parentId, setParentId] = useState(null);
+  const [parentDocInfo, setParentDocInfo] = useState(null);
+  const [isDsp01PullOpen, setIsDsp01PullOpen] = useState(false);
+  const [docStatus, setDocStatus] = useState('draft');
+  const [revisionData, setRevisionData] = useState(null);
+  const [catatanRevisi, setCatatanRevisi] = useState('');
 
   // Approver / Users list from backend
   const [apiUsers, setApiUsers] = useState([]);
@@ -158,6 +171,18 @@ export default function PenghapusanFormPage({ user }) {
     fetchApprovers();
   }, []);
 
+  const parseSingleSaksi = (rawStr, defaultJabatan) => {
+    const cleaned = String(rawStr || '').replace(/^[0-9]+\.\s*/, '').trim();
+    if (!cleaned) return null;
+    const parenIdx = cleaned.lastIndexOf('(');
+    if (parenIdx !== -1 && cleaned.endsWith(')')) {
+      const nm = cleaned.slice(0, parenIdx).trim();
+      const np = cleaned.slice(parenIdx + 1, -1).replace(/NIPP\s*:?\s*/i, '').trim();
+      return { nama: nm, nipp: np, jabatan: defaultJabatan };
+    }
+    return { nama: cleaned, nipp: '', jabatan: defaultJabatan };
+  };
+
   // Load document in edit mode
   useEffect(() => {
     if (!isEditMode) return;
@@ -168,8 +193,22 @@ export default function PenghapusanFormPage({ user }) {
         const doc = res?.document || res;
         if (doc) {
           const d = doc.data || {};
+          setDocStatus(String(doc.status || 'draft').toLowerCase());
+          if (doc.parent_id || doc.dsp01_id || d.parent_id || d.dsp01_id) {
+            setParentId(doc.parent_id || doc.dsp01_id || d.parent_id || d.dsp01_id);
+          }
+          if (doc.parent_document) {
+            setParentDocInfo(doc.parent_document);
+          }
+
+          if (String(doc.status || '').toLowerCase() === 'rejected' || isRevisiPath) {
+            api.getDocumentRevision(id)
+              .then((revRes) => setRevisionData(revRes?.data || revRes))
+              .catch(() => null);
+          }
+
           setFormData({
-            nomor_referensi: d.nomor_referensi || d.ref_ba || '',
+            nomor_referensi: d.nomor_referensi || doc.parent_document?.number || d.ref_ba || '',
             tanggal: d.tanggal ? String(d.tanggal).split('T')[0] : new Date().toISOString().split('T')[0],
             lokasi: d.lokasi || '',
             nama_pelaksana: d.nama_pelaksana || doc.requester?.name || '',
@@ -181,32 +220,44 @@ export default function PenghapusanFormPage({ user }) {
           if (d.verifikator_1_id) setVerifikator1(String(d.verifikator_1_id));
           if (d.verifikator_2_id) setVerifikator2(String(d.verifikator_2_id));
 
-          // Parse saksi secara aman (mendukung string, array of strings, array of objects, maupun format lainnya)
-          if (d.saksi) {
+          // Parse saksi_1 / saksi_2 atau saksi secara aman tanpa memecah gelar akademik berkoma (misal "Andi Wijaya, S.Kom.")
+          if (d.saksi_1 || d.saksi_2) {
+            if (d.saksi_1) {
+              const parsed1 = typeof d.saksi_1 === 'object'
+                ? { nama: d.saksi_1.nama || '', nipp: d.saksi_1.nipp || '', jabatan: d.saksi_1.jabatan || 'Saksi I' }
+                : parseSingleSaksi(d.saksi_1, 'Saksi I');
+              if (parsed1) setSaksi1(parsed1);
+            }
+            if (d.saksi_2) {
+              const parsed2 = typeof d.saksi_2 === 'object'
+                ? { nama: d.saksi_2.nama || '', nipp: d.saksi_2.nipp || '', jabatan: d.saksi_2.jabatan || 'Saksi II' }
+                : parseSingleSaksi(d.saksi_2, 'Saksi II');
+              if (parsed2) setSaksi2(parsed2);
+            }
+          } else if (d.saksi) {
             let saksiItems = [];
             if (typeof d.saksi === 'string') {
-              saksiItems = d.saksi.split(',').map(s => s.trim()).filter(Boolean);
+              if (d.saksi.includes(';')) {
+                saksiItems = d.saksi.split(';').map(s => s.trim()).filter(Boolean);
+              } else if (/\b2\.\s/.test(d.saksi)) {
+                saksiItems = d.saksi.split(/,?\s*(?=\b2\.\s)/).map(s => s.trim()).filter(Boolean);
+              } else if (d.saksi.includes('\n')) {
+                saksiItems = d.saksi.split('\n').map(s => s.trim()).filter(Boolean);
+              } else {
+                // Pisahkan hanya pada koma setelah tanda kurung tutup NIPP `),` agar gelar akademik tidak terpecah
+                saksiItems = d.saksi.split(/\)\s*,\s*/).map((s, idx, arr) => (idx < arr.length - 1 ? `${s})` : s).trim()).filter(Boolean);
+              }
             } else if (Array.isArray(d.saksi)) {
               saksiItems = d.saksi.map(s => typeof s === 'string' ? s.trim() : (s?.nama || '')).filter(Boolean);
             }
 
             if (saksiItems[0]) {
-              const m1 = String(saksiItems[0]).replace(/^[0-9]+\.\s*/, '');
-              const [nm, np] = m1.includes('(') ? m1.split('(') : [m1, ''];
-              setSaksi1({
-                nama: nm ? nm.trim() : m1,
-                nipp: np ? np.replace(')', '').replace(/NIPP\s*/i, '').trim() : '',
-                jabatan: 'Saksi I'
-              });
+              const parsed1 = parseSingleSaksi(saksiItems[0], 'Saksi I');
+              if (parsed1) setSaksi1(parsed1);
             }
             if (saksiItems[1]) {
-              const m2 = String(saksiItems[1]).replace(/^[0-9]+\.\s*/, '');
-              const [nm, np] = m2.includes('(') ? m2.split('(') : [m2, ''];
-              setSaksi2({
-                nama: nm ? nm.trim() : m2,
-                nipp: np ? np.replace(')', '').replace(/NIPP\s*/i, '').trim() : '',
-                jabatan: 'Saksi II'
-              });
+              const parsed2 = parseSingleSaksi(saksiItems[1], 'Saksi II');
+              if (parsed2) setSaksi2(parsed2);
             }
           }
 
@@ -230,7 +281,79 @@ export default function PenghapusanFormPage({ user }) {
       }
     };
     loadDoc();
-  }, [id, isEditMode]);
+  }, [id, isEditMode, isRevisiPath]);
+
+  // Tarik dari Dokumen DSP-01 (Approved)
+  const handleSelectDsp01Prefill = ({ parentId: pId, parentDoc, headerData, items: pulledItems }) => {
+    setParentId(pId);
+    setParentDocInfo(parentDoc);
+
+    const importedLokasi =
+      headerData?.lokasi ||
+      headerData?.business_area ||
+      parentDoc?.unit_kerja ||
+      formData.lokasi;
+
+    setFormData(prev => ({
+      ...prev,
+      nomor_referensi: headerData?.nomor_referensi || parentDoc?.number || prev.nomor_referensi,
+      lokasi: importedLokasi,
+      status_kondisi: headerData?.status_kondisi || 'Dimusnahkan',
+    }));
+
+    if (Array.isArray(pulledItems) && pulledItems.length > 0) {
+      setItems(
+        pulledItems.map((it, idx) => ({
+          id: Date.now() + idx,
+          nama_barang: it.nama_barang || it.nama_aset || it.nama || 'Aset TI',
+          jumlah: Number(it.jumlah) || 1,
+          serial_nomor: it.serial_nomor || it.sn || '-',
+          no_inventaris: it.no_inventaris || it.id_aset || '-',
+          lokasi_aset: it.lokasi_aset || importedLokasi || '-',
+          keterangan: it.keterangan || it.alasan_pemusnahan || it.alasan || 'Penghapusan aset sesuai persetujuan DSP-01',
+        }))
+      );
+    }
+
+    showToast(`Data berhasil ditarik dari Dokumen DSP-01 (${parentDoc?.number || pId})`);
+  };
+
+  const handleImportPreviewData = (importedData, importedItems) => {
+    if (importedData && typeof importedData === 'object') {
+      setFormData(prev => ({
+        ...prev,
+        nomor_referensi: importedData.nomor_referensi || prev.nomor_referensi,
+        tanggal: importedData.tanggal || prev.tanggal,
+        lokasi: importedData.lokasi || importedData.business_area || prev.lokasi,
+        nama_pelaksana: importedData.nama_pelaksana || prev.nama_pelaksana,
+        nipp_pelaksana: importedData.nipp_pelaksana || prev.nipp_pelaksana,
+        jabatan_pelaksana: importedData.jabatan_pelaksana || prev.jabatan_pelaksana,
+        status_kondisi: importedData.status_kondisi || prev.status_kondisi,
+      }));
+      if (importedData.saksi_1) {
+        const p1 = parseSingleSaksi(importedData.saksi_1, 'Saksi I');
+        if (p1) setSaksi1(p1);
+      }
+      if (importedData.saksi_2) {
+        const p2 = parseSingleSaksi(importedData.saksi_2, 'Saksi II');
+        if (p2) setSaksi2(p2);
+      }
+    }
+    if (Array.isArray(importedItems) && importedItems.length > 0) {
+      setItems(
+        importedItems.map((it, idx) => ({
+          id: Date.now() + idx,
+          nama_barang: it.nama_barang || it.nama_aset || '',
+          jumlah: Number(it.jumlah) || 1,
+          serial_nomor: it.serial_nomor || '-',
+          no_inventaris: it.no_inventaris || it.id_aset || '-',
+          lokasi_aset: it.lokasi_aset || formData.lokasi || '-',
+          keterangan: it.keterangan || '-',
+        }))
+      );
+    }
+    showToast('Data hasil import berhasil dimuat ke dalam form DSP-03.');
+  };
 
   // Sync with SSO User
   const handleSyncSSO = () => {
@@ -325,16 +448,20 @@ export default function PenghapusanFormPage({ user }) {
 
   // Build Payload
   const buildPayload = (isSubmit = true) => {
+    const saksi1Formatted = saksi1.nama ? `${saksi1.nama}${saksi1.nipp ? ` (${saksi1.nipp})` : ''}` : '';
+    const saksi2Formatted = saksi2.nama ? `${saksi2.nama}${saksi2.nipp ? ` (${saksi2.nipp})` : ''}` : '';
     const saksiString = [
-      saksi1.nama ? `1. ${saksi1.nama}${saksi1.nipp ? ` (${saksi1.nipp})` : ''}` : '',
-      saksi2.nama ? `2. ${saksi2.nama}${saksi2.nipp ? ` (${saksi2.nipp})` : ''}` : '',
-    ].filter(Boolean).join(', ');
+      saksi1Formatted ? `1. ${saksi1Formatted}` : '',
+      saksi2Formatted ? `2. ${saksi2Formatted}` : '',
+    ].filter(Boolean).join('; ');
 
     return {
       type: 'dsp03',
       submit: isSubmit,
+      ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
       approver_id: verifikator1 ? Number(verifikator1) : null,
       data: {
+        ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
         nomor_referensi: formData.nomor_referensi || 'FR-PH/REF/001',
         tanggal: formData.tanggal,
         lokasi: formData.lokasi,
@@ -342,6 +469,8 @@ export default function PenghapusanFormPage({ user }) {
         nipp_pelaksana: formData.nipp_pelaksana,
         jabatan_pelaksana: formData.jabatan_pelaksana,
         status_kondisi: formData.status_kondisi,
+        saksi_1: saksi1Formatted,
+        saksi_2: saksi2Formatted,
         saksi: saksiString,
         verifikator_1_id: verifikator1 ? Number(verifikator1) : null,
         verifikator_2_id: verifikator2 ? Number(verifikator2) : null,
@@ -506,8 +635,16 @@ export default function PenghapusanFormPage({ user }) {
       };
 
       let finalDocId = id;
+      const isRevisingRejected = isEditMode && (docStatus === 'rejected' || isRevisiPath);
 
-      if (isEditMode) {
+      if (isRevisingRejected) {
+        await api.reviseDocument(id, {
+          data: payload.data,
+          items: payload.items,
+          catatan_revisi: catatanRevisi.trim() || signNotes || 'Telah diperbaiki sesuai catatan verifikator.',
+          ...(parentId ? { parent_id: Number(parentId), dsp01_id: Number(parentId) } : {}),
+        });
+      } else if (isEditMode) {
         // 1. Simpan update data
         await api.updateDocument(id, payload);
         // 2. Submit dokumen agar status beralih dari draft ke in_review dan nomor dokumen dibuat
@@ -591,7 +728,25 @@ export default function PenghapusanFormPage({ user }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <DocumentImportActions
+            type="dsp03"
+            mode="form"
+            parentId={parentId}
+            onPreviewData={handleImportPreviewData}
+            onDraftCreated={(doc) => {
+              const newId = doc?.id || doc?.document?.id;
+              navigate(newId ? `/penghapusan/${newId}` : '/penghapusan');
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setIsDsp01PullOpen(true)}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 bg-orange-50 hover:bg-orange-100 text-[#f05a22] rounded-xl text-xs font-bold border border-orange-200 transition-colors"
+          >
+            <Layers className="w-4 h-4 text-[#f05a22]" />
+            <span>Tarik dari Dokumen DSP-01</span>
+          </button>
           <button
             type="button"
             onClick={handleOpenImportDsp02}
@@ -610,6 +765,64 @@ export default function PenghapusanFormPage({ user }) {
           </button>
         </div>
       </div>
+
+      {/* Parent DSP-01 Badge */}
+      {(parentId || parentDocInfo) && (
+        <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="px-2 py-0.5 rounded bg-[#0b2046] text-white text-[10px] font-bold uppercase">
+              Terhubung ke DSP-01
+            </span>
+            <span className="font-mono font-bold text-[#0b2046]">
+              {parentDocInfo?.number || formData.nomor_referensi}
+            </span>
+            {parentDocInfo?.nama_pemohon && (
+              <span className="text-slate-600">
+                • Pemohon: <strong>{parentDocInfo.nama_pemohon}</strong>
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsDsp01PullOpen(true)}
+            className="text-[11px] font-bold text-blue-700 hover:underline"
+          >
+            Ganti Referensi DSP-01
+          </button>
+        </div>
+      )}
+
+      {/* Revision Banner when editing a rejected document */}
+      {(docStatus === 'rejected' || isRevisiPath) && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
+          <div className="flex items-start gap-3">
+            <RotateCcw className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-red-900">
+                Mode Revisi Dokumen (DSP-03 Ditolak)
+              </h3>
+              {revisionData?.rejection && (
+                <p className="text-xs text-red-800 mt-1">
+                  <strong>Alasan Penolakan ({revisionData.rejection.approver_name || 'Verifikator'} - Tahap {revisionData.rejection.step || 1}):</strong>{' '}
+                  {revisionData.rejection.note}
+                </p>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-red-900 mb-1">
+              Catatan Perbaikan Revisi <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              rows={2}
+              value={catatanRevisi}
+              onChange={(e) => setCatatanRevisi(e.target.value)}
+              placeholder="Jelaskan perbaikan yang dilakukan pada Formulir Penghapusan Aset TI ini..."
+              className="w-full px-3 py-2 bg-white border border-red-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-400"
+            />
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2.5">
@@ -1252,6 +1465,14 @@ export default function PenghapusanFormPage({ user }) {
           </div>
         </div>
       )}
+
+      {/* MODAL TARIK DARI DOKUMEN DSP-01 (APPROVED) */}
+      <Dsp01PullModal
+        isOpen={isDsp01PullOpen}
+        onClose={() => setIsDsp01PullOpen(false)}
+        targetType="dsp03"
+        onSelectPrefill={handleSelectDsp01Prefill}
+      />
 
       {/* MODAL IMPORT DSP-02 */}
       {isImportModalOpen && (

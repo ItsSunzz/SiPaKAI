@@ -22,7 +22,8 @@ export default function ResetPasswordPage({ onBackToLogin }) {
   const navigate = useNavigate()
 
   const token = searchParams.get('token') || ''
-  const email = searchParams.get('email') || ''
+  const email = searchParams.get('email') || searchParams.get('nip') || ''
+  const nip = searchParams.get('nip') || ''
 
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
@@ -62,6 +63,7 @@ export default function ResetPasswordPage({ onBackToLogin }) {
       const response = await api.resetPassword({
         token,
         email,
+        nip,
         password,
         password_confirmation: passwordConfirmation,
       })

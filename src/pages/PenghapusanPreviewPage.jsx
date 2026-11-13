@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import SignatureSelector from '../components/SignatureSelector';
+import DocumentRevisionSection from '../components/DocumentRevisionSection';
 
 export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -347,11 +348,33 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
   const isRejected = doc?.status === 'rejected';
 
   // Check if current user is the pending approver
-  const currentPendingApproverId = doc?.penyetuju_id;
+  const document = doc;
+  const currentUser = user;
+  const currentPendingApproverId = doc?.current_approver_id || doc?.penyetuju_id;
   const isCurrentApprover = Boolean(
     user && currentPendingApproverId && Number(user.id) === Number(currentPendingApproverId)
   );
-  const canApprove = isCurrentApprover || (user?.role === 'super_admin' && !isApproved && !isDraft);
+  const hasUserApproved = Boolean(
+    document?.hasUserApproved ??
+    document?.has_user_approved ??
+    document?.verification_steps?.some(
+      (step) =>
+        Number(step.approver_id) === Number(currentUser?.id) &&
+        step.status === 'approved'
+    )
+  );
+  const canVerify = Boolean(
+    document?.can_verify ??
+    (document?.status === 'in_review' &&
+      Number(document?.current_approver_id || document?.penyetuju_id) === Number(currentUser?.id) &&
+      !hasUserApproved)
+  );
+  const canRevise = Boolean(
+    document?.can_revise ??
+    (document?.status === 'rejected' &&
+      Number(document?.requester_id || document?.pemohon_id || document?.created_by) === Number(currentUser?.id))
+  );
+  const canApprove = canVerify;
 
   // Status Approver Steps
   const v1User = apiUsers.find(u => Number(u.id) === Number(d.verifikator_1_id));
@@ -511,6 +534,14 @@ export default function PenghapusanPreviewPage({ user, onDocumentUpdated }) {
           )}
         </div>
       </div>
+
+      {/* Referensi DSP-01, Stepper Verifikasi & Revisi Dokumen */}
+      <DocumentRevisionSection
+        doc={doc}
+        user={user}
+        editRevisiPath={`/penghapusan/${doc.id}/revisi`}
+        onRevised={loadData}
+      />
 
       {/* Tabs View */}
       <div className="flex border-b border-slate-200 bg-white px-6 pt-3 rounded-t-2xl shadow-2xs">

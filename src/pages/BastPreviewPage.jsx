@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
 import SignatureSelector from '../components/SignatureSelector';
+import DocumentRevisionSection from '../components/DocumentRevisionSection';
 
 export default function BastPreviewPage({ user, onDocumentUpdated }) {
   const { id } = useParams();
@@ -547,6 +548,14 @@ export default function BastPreviewPage({ user, onDocumentUpdated }) {
           </button>
         </div>
       )}
+
+      {/* Multi-Verifikator & Revisi Section */}
+      <DocumentRevisionSection
+        doc={doc}
+        user={user}
+        editRevisiPath={`/bast-barang/${doc.id}/revisi`}
+        onRevised={() => fetchDoc(false)}
+      />
 
       {/* Main Content Area */}
       {activeTab === 'pdf' ? (

@@ -15,9 +15,11 @@ import {
   FileDown,
   X,
   Loader2,
-  Edit3
+  Edit3,
+  RotateCcw
 } from 'lucide-react';
 import { api, fallbackDocuments } from '../services/api';
+import DocumentImportActions from '../components/DocumentImportActions';
 
 export default function BaPemusnahanListPage({ user }) {
   const navigate = useNavigate();
@@ -256,7 +258,16 @@ export default function BaPemusnahanListPage({ user }) {
             Kelola permohonan disposisi, verifikasi bertingkat, dan pengesahan Berita Acara pemusnahan aset TI PT Kereta Api Indonesia (Persero).
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentImportActions
+            type="dsp02"
+            mode="list"
+            onDraftCreated={(doc) => {
+              fetchDocs();
+              const newId = doc?.id || doc?.document?.id;
+              if (newId) navigate(`/berita-acara-pemusnahan/${newId}`);
+            }}
+          />
           <button 
             type="button"
             onClick={fetchDocs}
@@ -265,14 +276,6 @@ export default function BaPemusnahanListPage({ user }) {
           >
             <RefreshCw className={`w-4 h-4 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Segarkan</span>
-          </button>
-          <button 
-            type="button"
-            onClick={() => alert('Fitur Ekspor XLS/PDF sedang disiapkan')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50 transition-colors shadow-2xs"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>Ekspor Data</span>
           </button>
           <button 
             type="button"
@@ -549,7 +552,29 @@ export default function BaPemusnahanListPage({ user }) {
                               </button>
                             );
                           }
-                          const canAct = isPending && (isAdminOrSuper || (user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)));
+                          const canRevise = Boolean(
+                            doc.can_revise !== undefined
+                              ? doc.can_revise
+                              : isRejected && user && (String(doc.user_id || doc.requester?.id || '') === String(user.id) || isAdminOrSuper)
+                          );
+                          if (canRevise) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/berita-acara-pemusnahan/${doc.id}/revisi`)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-xs"
+                                title="Revisi Dokumen yang Ditolak"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Revisi Dokumen</span>
+                              </button>
+                            );
+                          }
+                          const canAct = Boolean(
+                            doc.can_verify !== undefined
+                              ? doc.can_verify
+                              : isPending && (isAdminOrSuper || (user?.id && doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)))
+                          );
                           return (
                             <button
                               type="button"

@@ -395,15 +395,69 @@ export default function PemusnahanReviewPage({ user }) {
     currentApproverObj?.name ||
     'Pejabat Verifikator';
 
-  // Role check: izinkan pejabat yang sesuai giliran tahap aktif atau admin/super_admin
+  // Role check & status verifikasi berdasarkan siklus terbaru (verification_steps / hasUserApproved dari API)
+  const document = doc;
+  const currentUser = user;
   const isAdminOrSuper = !user || user.role === 'admin' || user.role === 'super_admin';
-  const isCurrentApprover = Boolean(
-    user?.id && (
-      (doc.penyetuju_id && Number(user.id) === Number(doc.penyetuju_id)) ||
-      (activeStepObj?.targetUserId && Number(user.id) === Number(activeStepObj.targetUserId))
+
+  // Deklarasikan di dalam komponen halaman Review sebelum JSX return:
+  const hasUserApproved = Boolean(
+    document?.hasUserApproved ??
+    document?.has_user_approved ??
+    document?.verification_steps?.some(
+      (step) =>
+        Number(step.approver_id) === Number(currentUser?.id) &&
+        step.status === 'approved'
+    ) ??
+    approvalHistory.some(
+      (a) =>
+        Number(a.approver_id || a.user_id || a.approver?.id) === Number(currentUser?.id) &&
+        (a.aksi === 'approved' || a.action === 'APPROVED')
     )
   );
-  const canTakeAction = isPending && (isAdminOrSuper || isCurrentApprover);
+
+  const userApprovalRecord =
+    document?.verification_steps?.find(
+      (step) =>
+        Number(step.approver_id) === Number(currentUser?.id) &&
+        step.status === 'approved'
+    ) ||
+    approvalHistory.find(
+      (a) =>
+        Number(a.approver_id || a.user_id || a.approver?.id) === Number(currentUser?.id) &&
+        (a.aksi === 'approved' || a.action === 'APPROVED')
+    );
+
+  const userRejectRecord =
+    document?.verification_steps?.find(
+      (step) =>
+        Number(step.approver_id) === Number(currentUser?.id) &&
+        step.status === 'rejected'
+    ) ||
+    approvalHistory.find(
+      (a) =>
+        Number(a.approver_id || a.user_id || a.approver?.id) === Number(currentUser?.id) &&
+        (a.aksi === 'rejected' || a.action === 'REJECTED')
+    );
+
+  const hasUserRejected = Boolean(userRejectRecord);
+
+  // Untuk menentukan apakah tombol Setujui / Tolak muncul:
+  const canVerify = Boolean(
+    document?.can_verify ??
+    (document?.status === 'in_review' &&
+      Number(document?.current_approver_id || document?.penyetuju_id || activeStepObj?.targetUserId) === Number(currentUser?.id) &&
+      !hasUserApproved)
+  );
+
+  // Untuk menentukan apakah tombol Revisi muncul bagi pemohon:
+  const canRevise = Boolean(
+    document?.can_revise ??
+    (document?.status === 'rejected' &&
+      (Number(document?.requester_id || document?.pemohon_id || document?.created_by) === Number(currentUser?.id) || isAdminOrSuper))
+  );
+
+  const canTakeAction = canVerify;
 
   // Buka modal otorisasi e-Sign dengan input PIN
   const handleOpenApproveModal = () => {
@@ -560,7 +614,7 @@ export default function PemusnahanReviewPage({ user }) {
             </button>
           )}
 
-          {isRejected && (
+          {canRevise && (
             <button
               type="button"
               id="btn-top-revisi-pmh"
@@ -1054,10 +1108,13 @@ export default function PemusnahanReviewPage({ user }) {
 
             <div className="p-5 space-y-3">
               {sequentialSteps.map((s) => {
+                const apiStep = Array.isArray(doc.verification_steps)
+                  ? doc.verification_steps.find(vs => Number(vs.step) === Number(s.step))
+                  : null;
                 const existingAppr = approvalHistory.find(a => Number(a.step) === s.step);
-                const isStepApproved = isApproved || (existingAppr && (existingAppr.action === 'APPROVED' || existingAppr.aksi === 'approved'));
-                const isStepRejected = existingAppr && (existingAppr.action === 'REJECTED' || existingAppr.aksi === 'rejected');
-                const isStepCurrentActive = isPending && s.step === currentActiveStep;
+                const isStepApproved = isApproved || (apiStep ? apiStep.status === 'approved' : Boolean(existingAppr && (existingAppr.action === 'APPROVED' || existingAppr.aksi === 'approved')));
+                const isStepRejected = apiStep ? apiStep.status === 'rejected' : Boolean(existingAppr && (existingAppr.action === 'REJECTED' || existingAppr.aksi === 'rejected'));
+                const isStepCurrentActive = isPending && (apiStep ? Boolean(apiStep.is_current) : s.step === currentActiveStep);
 
                 return (
                   <div 
@@ -1342,15 +1399,17 @@ export default function PemusnahanReviewPage({ user }) {
                   <p className="text-[11px] text-rose-800 leading-relaxed">
                     Pengajuan permohonan pemusnahan aset ini telah ditolak oleh pejabat otorisator. Silakan perbaiki data usulan melalui Formulir Revisi untuk diajukan kembali.
                   </p>
-                  <button
-                    type="button"
-                    id="btn-sidebar-revisi-pmh"
-                    onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
-                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Buka Formulir Revisi Permohonan</span>
-                  </button>
+                  {canRevise && (
+                    <button
+                      type="button"
+                      id="btn-sidebar-revisi-pmh"
+                      onClick={() => navigate(`/pemusnahan/${doc.id}/revisi`)}
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Buka Formulir Revisi Permohonan</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
