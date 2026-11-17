@@ -4,6 +4,7 @@ import { Search, X, Download, Users, CalendarDays, CalendarRange, DoorOpen, Refr
 import { api } from '../services/api'
 import TablePagination, { Avatar } from '../components/TablePagination'
 import { inputCls } from '../components/UserFormModal'
+import MasterImportActions from '../components/MasterImportActions'
 
 const PER_PAGE = 8
 
@@ -129,7 +130,12 @@ export default function LaporanBukuTamuPage({ user }) {
             pihak yang dituju, serta jam masuk dan keluar di lingkungan PT Kereta Api Indonesia (Persero).
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <MasterImportActions
+            module="visitors"
+            label="Buku Tamu"
+            onImported={() => load()}
+          />
           <button
             type="button"
             onClick={load}
