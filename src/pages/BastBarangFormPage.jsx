@@ -35,6 +35,7 @@ import {
 import { api } from '../services/api';
 import DocumentImportActions from '../components/DocumentImportActions';
 import MasterImportActions from '../components/MasterImportActions';
+import { normalizeMasterAsset } from '../components/MasterAssetPickerModal';
 // Default master pegawai list (can be extended later)
 const DEFAULT_MASTER_PEGAWAI = [];
 
@@ -428,34 +429,24 @@ export default function BastBarangFormPage({ user }) {
     try {
       setIsLoadingAssets(true);
       const res = await api.getAssets().catch(() => null);
-      if (res && res.data && res.data.length > 0) {
-        setSapAssets(res.data);
+      const rawList = Array.isArray(res) ? res : (res?.data || []);
+      if (rawList.length > 0) {
+        setSapAssets(rawList.map(normalizeMasterAsset));
       } else {
         setSapAssets([
-          {
+          normalizeMasterAsset({
             id: 'sap-101',
-            no_inventaris: 'INV-001',
-            nama: 'Laptop Dell',
-            brand: 'Latitude 5440',
-            serial_number: 'SN-001',
-            keterangan: 'Kondisi baik',
-          },
-          {
-            id: 'sap-102',
-            no_inventaris: 'INV-002',
-            nama: 'Monitor Dell 24"',
-            brand: 'UltraSharp U2422H',
-            serial_number: 'SN-002',
-            keterangan: 'Layar jernih normal',
-          },
-          {
-            id: 'sap-103',
-            no_inventaris: 'INV-003',
-            nama: 'Docking Station Type-C',
-            brand: 'Dell WD19S',
-            serial_number: 'SN-003',
-            keterangan: 'Aksesoris operasional lengkap',
-          },
+            ci_id: 'IT.045.0120.1.B060.00001',
+            product_name: '8U, 19", 12U',
+            manufacturer: 'IndoRack',
+            serial_number: 'WM_PAM DAOP',
+            status_ci: 'Deployed',
+            tier_1: 'Hardware',
+            tier_2: 'Data Center',
+            tier_3: 'Rack Server / wallmount',
+            company: 'PT Kereta Api Indonesia (Persero)',
+            site: '9160 - Information Sys',
+          }),
         ]);
       }
     } catch (err) {
@@ -467,14 +458,20 @@ export default function BastBarangFormPage({ user }) {
 
   const handleImportSelectedSap = () => {
     const selected = sapAssets.filter((a) => selectedSapIds.includes(a.id));
-    const newItems = selected.map((asset, idx) => ({
-      id: Date.now() + idx,
-      nama_barang: asset.nama || asset.nama_aset || 'Laptop Dell',
-      brand_series: asset.brand || asset.merk || 'Latitude 5440',
-      no_inventaris: asset.no_inventaris || asset.nomor_aset || `INV-00${items.length + idx + 1}`,
-      serial_number: asset.serial_number || asset.sn || `SN-00${items.length + idx + 1}`,
-      keterangan: asset.keterangan || 'Kondisi baik',
-    }));
+    const newItems = selected.map((raw, idx) => {
+      const asset = normalizeMasterAsset(raw);
+      return {
+        id: Date.now() + idx,
+        nama_barang: asset.product_name || 'Perangkat TI',
+        brand_series: asset.manufacturer || asset.tier_3 || '-',
+        no_inventaris: asset.ci_id || `INV-00${items.length + idx + 1}`,
+        serial_number: asset.serial_number || `SN-00${items.length + idx + 1}`,
+        keterangan:
+          asset.keterangan ||
+          [asset.status_ci, asset.tier_2, asset.tier_3, asset.site].filter(Boolean).join(' • ') ||
+          'Kondisi baik',
+      };
+    });
 
     setItems((prev) => [...prev, ...newItems]);
     setIsSapModalOpen(false);
@@ -2015,12 +2012,19 @@ export default function BastBarangFormPage({ user }) {
               ) : (
                 <div className="space-y-2">
                   {sapAssets
+                    .map(normalizeMasterAsset)
                     .filter((a) => {
                       const q = sapSearchTerm.toLowerCase();
                       return (
                         !q ||
-                        (a.nama || a.nama_aset || '').toLowerCase().includes(q) ||
-                        (a.no_inventaris || '').toLowerCase().includes(q)
+                        a.ci_id.toLowerCase().includes(q) ||
+                        a.product_name.toLowerCase().includes(q) ||
+                        a.manufacturer.toLowerCase().includes(q) ||
+                        a.serial_number.toLowerCase().includes(q) ||
+                        a.tier_1.toLowerCase().includes(q) ||
+                        a.tier_2.toLowerCase().includes(q) ||
+                        a.tier_3.toLowerCase().includes(q) ||
+                        a.site.toLowerCase().includes(q)
                       );
                     })
                     .map((asset) => {
@@ -2045,14 +2049,24 @@ export default function BastBarangFormPage({ user }) {
                               className="rounded text-blue-600"
                             />
                             <div>
-                              <div className="text-xs font-bold text-slate-900">{asset.nama || asset.nama_aset}</div>
+                              <div className="text-xs font-bold text-slate-900">
+                                {asset.product_name || '-'}
+                                {asset.status_ci && (
+                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    {asset.status_ci}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[11px] text-slate-500 mt-0.5">
-                                Brand/Series: {asset.brand || 'Standar KAI'} • SN: {asset.serial_number || '-'}
+                                Manufacturer: <span className="font-semibold text-slate-700">{asset.manufacturer || '-'}</span> • SN: <span className="font-mono">{asset.serial_number || '-'}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                {[asset.tier_1_display, asset.tier_2, asset.tier_3, asset.site].filter(Boolean).join(' • ')}
                               </div>
                             </div>
                           </div>
                           <span className="font-mono text-xs font-bold text-[#f05a22]">
-                            #{asset.no_inventaris || asset.nomor_aset}
+                            {asset.ci_id}
                           </span>
                         </div>
                       );

@@ -12,9 +12,13 @@ import {
   Lock,
   Building,
   Check,
-  Info
+  Info,
+  Database,
+  Search
 } from 'lucide-react';
 import { api } from '../services/api';
+import MasterImportActions from '../components/MasterImportActions';
+import { normalizeMasterAsset } from '../components/MasterAssetPickerModal';
 
 export default function PengaturanPage({ user, onProfileUpdated }) {
   const [currentUser, setCurrentUser] = useState(user || null);
@@ -38,6 +42,26 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
   // PIN Test verification state
   const [testPin, setTestPin] = useState('');
   const [testPinResult, setTestPinResult] = useState(null);
+
+  // Master Aset state (for Super Admin)
+  const [assetsList, setAssetsList] = useState([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState(false);
+  const [assetSearch, setAssetSearch] = useState('');
+
+  const isSuperAdmin = (currentUser?.role || user?.role) === 'super_admin';
+
+  const loadMasterAssets = async (q = '') => {
+    setIsLoadingAssets(true);
+    try {
+      const res = await api.getAssets(q);
+      const list = Array.isArray(res) ? res : (res?.data || []);
+      setAssetsList(list.map(normalizeMasterAsset));
+    } catch (err) {
+      console.warn('Gagal memuat daftar master aset:', err);
+    } finally {
+      setIsLoadingAssets(false);
+    }
+  };
 
   // Load user profile & signature
   const loadProfile = async (bustCache = false) => {
@@ -64,6 +88,12 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
   useEffect(() => {
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      loadMasterAssets();
+    }
+  }, [isSuperAdmin]);
 
   // Handle file select
   const handleFileChange = (e) => {
@@ -507,6 +537,167 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
               </div>
             )}
           </section>
+
+          {/* Khusus Super Admin: Pengaturan & Import Master Aset TI (SAP) */}
+          {isSuperAdmin && (
+            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div className="border-l-4 border-[#0b2046] px-6 py-4 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#0b2046] uppercase tracking-wider flex items-center gap-2">
+                      <Database className="w-4 h-4 text-[#f05a22]" />
+                      Manajemen & Import Master Aset TI (SAP)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-extrabold uppercase bg-blue-50 text-[#0b2046] border border-blue-200">
+                      Khusus Super Admin
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Unduh template CSV resmi atau unggah file import (CSV / XLSX / JSON) untuk memperbarui basis data Master Aset TI
+                  </p>
+                </div>
+
+                <MasterImportActions
+                  module="assets"
+                  label="Master Aset"
+                  onImported={(res) => {
+                    setSuccessMsg(res?.message || 'Data Master Aset berhasil diimport ke sistem.');
+                    loadMasterAssets(assetSearch);
+                  }}
+                />
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={assetSearch}
+                      onChange={(e) => setAssetSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          loadMasterAssets(assetSearch);
+                        }
+                      }}
+                      placeholder="Cari kode/nomor inventaris atau nama aset..."
+                      className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#f05a22]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadMasterAssets(assetSearch)}
+                    disabled={isLoadingAssets}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAssets ? 'animate-spin text-[#f05a22]' : ''}`} />
+                    <span>Segarkan Aset ({assetsList.length})</span>
+                  </button>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="max-h-80 overflow-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider sticky top-0 z-10">
+                        <tr>
+                          <th className="py-2.5 px-3 w-10 text-center">No</th>
+                          <th className="py-2.5 px-3">CI ID+ (kode_aset)</th>
+                          <th className="py-2.5 px-3">Product Name+ (nama)</th>
+                          <th className="py-2.5 px-3">Manufacturer (merk_tipe)</th>
+                          <th className="py-2.5 px-3">Serial Number (nomor_seri)</th>
+                          <th className="py-2.5 px-3">Status* (status_ci)</th>
+                          <th className="py-2.5 px-3">Tier 1 (tipe / jenis_aset)</th>
+                          <th className="py-2.5 px-3">Tier 2</th>
+                          <th className="py-2.5 px-3">Tier 3</th>
+                          <th className="py-2.5 px-3">Company+</th>
+                          <th className="py-2.5 px-3">Site+ (lokasi)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {isLoadingAssets ? (
+                          <tr>
+                            <td colSpan={11} className="py-8 text-center text-slate-400">
+                              Memuat data Master Aset...
+                            </td>
+                          </tr>
+                        ) : assetsList.length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="py-8 text-center text-slate-400">
+                              Belum ada data Master Aset atau tidak ditemukan. Silakan gunakan tombol <strong>Import Master Aset</strong> di atas.
+                            </td>
+                          </tr>
+                        ) : (
+                          assetsList
+                            .filter((a) => {
+                              const q = assetSearch.toLowerCase().trim();
+                              if (!q) return true;
+                              return (
+                                a.ci_id.toLowerCase().includes(q) ||
+                                a.product_name.toLowerCase().includes(q) ||
+                                a.manufacturer.toLowerCase().includes(q) ||
+                                a.serial_number.toLowerCase().includes(q) ||
+                                a.status_ci.toLowerCase().includes(q) ||
+                                a.tier_1.toLowerCase().includes(q) ||
+                                a.jenis_aset.toLowerCase().includes(q) ||
+                                a.tier_2.toLowerCase().includes(q) ||
+                                a.tier_3.toLowerCase().includes(q) ||
+                                a.company.toLowerCase().includes(q) ||
+                                a.site.toLowerCase().includes(q)
+                              );
+                            })
+                            .slice(0, 50)
+                            .map((asset, idx) => (
+                              <tr key={asset.id || idx} className="hover:bg-slate-50/80">
+                                <td className="py-2.5 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-[#0b2046] whitespace-nowrap">
+                                  {asset.ci_id || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 font-semibold text-slate-800">
+                                  {asset.product_name || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-700">
+                                  {asset.manufacturer || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-slate-700">
+                                  {asset.serial_number || '-'}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {asset.status_ci ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 whitespace-nowrap">
+                                      {asset.status_ci}
+                                    </span>
+                                  ) : (
+                                    '-'
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 whitespace-nowrap">
+                                    {asset.tier_1_display}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600">
+                                  {asset.tier_2 || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600">
+                                  {asset.tier_3 || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                                  {asset.company || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-700 font-medium whitespace-nowrap">
+                                  {asset.site || '-'}
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>

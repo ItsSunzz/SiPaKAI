@@ -28,12 +28,14 @@ import {
   Shield,
   Download,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Database
 } from 'lucide-react';
 import { api } from '../services/api';
 import KaiLogo from '../components/KaiLogo';
 import Dsp01PullModal from '../components/Dsp01PullModal';
 import DocumentImportActions from '../components/DocumentImportActions';
+import MasterAssetPickerModal from '../components/MasterAssetPickerModal';
 
 // Preset metode pemusnahan KAI
 const METODE_OPTIONS = [
@@ -84,6 +86,7 @@ export default function BaPemusnahanFormPage({ user }) {
 
   // Modal Import dari DSP-01
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isMasterAssetModalOpen, setIsMasterAssetModalOpen] = useState(false);
 
   // Modal PDF Preview (like BAST module)
   const [isPreviewPdfModalOpen, setIsPreviewPdfModalOpen] = useState(false);
@@ -813,14 +816,24 @@ export default function BaPemusnahanFormPage({ user }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleAddItem}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs self-start sm:self-auto"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Aset</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setIsMasterAssetModalOpen(true)}
+              className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-[#003580] border border-blue-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            >
+              <Database className="w-3.5 h-3.5 text-[#f05a22]" />
+              <span>Pilih dari Master Aset</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAddItem}
+              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Aset</span>
+            </button>
+          </div>
         </div>
 
         {/* Table of Items */}
@@ -1225,6 +1238,24 @@ export default function BaPemusnahanFormPage({ user }) {
           </div>
         </div>
       )}
+
+      <MasterAssetPickerModal
+        isOpen={isMasterAssetModalOpen}
+        onClose={() => setIsMasterAssetModalOpen(false)}
+        onSelectAssets={(chosen) => {
+          const mapped = chosen.map((a, idx) => ({
+            id: Date.now() + idx,
+            nama_aset: [a.product_name, a.manufacturer ? `(${a.manufacturer})` : '', a.tier_3 ? `- ${a.tier_3}` : ''].filter(Boolean).join(' ') || 'Aset TI',
+            jenis_aset: normalizeJenisAset(a.jenis_aset || a.tier_1),
+            id_aset: a.ci_id || a.serial_number || '-',
+            jumlah: 1,
+            satuan: 'Unit',
+            metode_pemusnahan: 'Penghancuran fisik',
+            keterangan: [a.serial_number ? `SN: ${a.serial_number}` : '', a.status_ci ? `Status: ${a.status_ci}` : '', a.tier_2, a.site].filter(Boolean).join(' • ') || 'Dimusnahkan sesuai SOP',
+          }));
+          setItems((prev) => [...prev, ...mapped]);
+        }}
+      />
     </div>
   );
 }

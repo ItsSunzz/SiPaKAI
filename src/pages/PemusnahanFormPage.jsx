@@ -23,10 +23,12 @@ import {
   Clock,
   RotateCcw,
   XCircle,
-  Edit3
+  Edit3,
+  Database
 } from 'lucide-react';
 import { api } from '../services/api';
 import DocumentImportActions from '../components/DocumentImportActions';
+import MasterAssetPickerModal from '../components/MasterAssetPickerModal';
 
 const REVISION_CATEGORY_OPTIONS = [
   'Perbaikan Nomor Seri / ID Aset SAP',
@@ -70,6 +72,7 @@ export default function PemusnahanFormPage({ user }) {
   const [draftSavedAt, setDraftSavedAt] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(null);
+  const [isMasterAssetModalOpen, setIsMasterAssetModalOpen] = useState(false);
 
   const isRevisionMode = isEditMode && (isRevisiRoute || docStatus === 'rejected' || docStatus === 'ditolak');
 
@@ -810,19 +813,29 @@ export default function PemusnahanFormPage({ user }) {
 
         {/* Bagian 2: Daftar Aset */}
         <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <div className="border-l-4 border-[#0b2046] px-6 py-4 flex justify-between items-center bg-white border-b border-slate-100">
+          <div className="border-l-4 border-[#0b2046] px-6 py-4 flex flex-wrap justify-between items-center gap-2 bg-white border-b border-slate-100">
             <div>
               <h2 className="text-base font-bold text-[#0b2046]">Bagian 2: Rincian Daftar Aset yang Diusulkan</h2>
               <p className="text-xs text-slate-500 mt-0.5">Daftar perangkat TI yang direncanakan untuk dimusnahkan/scrap.</p>
             </div>
-            <button 
-              type="button"
-              disabled={isLockedNonDraft}
-              onClick={handleAddAsset}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-[#f05a22] border border-orange-200 hover:bg-orange-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Plus className="w-4 h-4" /> Tambah Aset
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={isLockedNonDraft}
+                onClick={() => setIsMasterAssetModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-[#0b2046] border border-blue-200 hover:bg-blue-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Database className="w-4 h-4 text-[#f05a22]" /> Pilih dari Master Aset
+              </button>
+              <button 
+                type="button"
+                disabled={isLockedNonDraft}
+                onClick={handleAddAsset}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-[#f05a22] border border-orange-200 hover:bg-orange-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" /> Tambah Aset
+              </button>
+            </div>
           </div>
           
           <div className="overflow-x-auto">
@@ -1346,6 +1359,21 @@ export default function PemusnahanFormPage({ user }) {
           </button>
         </div>
       </div>
+
+      <MasterAssetPickerModal
+        isOpen={isMasterAssetModalOpen}
+        onClose={() => setIsMasterAssetModalOpen(false)}
+        onSelectAssets={(chosen) => {
+          const mapped = chosen.map((a, idx) => ({
+            id: Date.now() + idx,
+            nama: [a.product_name, a.manufacturer ? `(${a.manufacturer})` : '', a.tier_3 ? `- ${a.tier_3}` : ''].filter(Boolean).join(' ') || 'Aset TI',
+            jenis: a.jenis_aset === 'Jaringan' ? 'Jaringan (Network)' : a.jenis_aset === 'Informasi' ? 'Lisensi/Software' : 'Fisik (Hardware)',
+            sn: a.ci_id || a.serial_number || '-',
+            alasan: [a.status_ci ? `Status: ${a.status_ci}` : '', a.tier_2 ? `Kategori: ${a.tier_2}` : '', a.site ? `Lokasi: ${a.site}` : ''].filter(Boolean).join(' • ') || 'Melewati batas usia pemakaian / End of Life',
+          }));
+          setAssets((prev) => [...prev, ...mapped]);
+        }}
+      />
     </div>
   );
 }

@@ -24,12 +24,14 @@ import {
   ShieldCheck,
   Lock,
   PenTool,
-  RotateCcw
+  RotateCcw,
+  Database
 } from 'lucide-react';
 import { api } from '../services/api';
 import SignatureSelector from '../components/SignatureSelector';
 import Dsp01PullModal from '../components/Dsp01PullModal';
 import DocumentImportActions from '../components/DocumentImportActions';
+import MasterAssetPickerModal from '../components/MasterAssetPickerModal';
 
 export default function PenghapusanFormPage({ user }) {
   const { id } = useParams();
@@ -42,6 +44,7 @@ export default function PenghapusanFormPage({ user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [isMasterAssetModalOpen, setIsMasterAssetModalOpen] = useState(false);
 
   // Parent DSP-01 & Revision states
   const [parentId, setParentId] = useState(null);
@@ -1029,14 +1032,24 @@ export default function PenghapusanFormPage({ user }) {
               <p className="text-xs text-slate-500">Sesuai kolom tabel template resmi FR.SM/TI/015.007/10-2020</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleAddItem}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-xs font-bold transition-colors shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Baris Aset</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMasterAssetModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#0b2046] border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-2xs"
+            >
+              <Database className="w-3.5 h-3.5 text-[#f05a22]" />
+              <span>Pilih dari Master Aset</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAddItem}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f05a22] hover:bg-[#d94a18] text-white rounded-lg text-xs font-bold transition-colors shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Baris Aset</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -1609,6 +1622,23 @@ export default function PenghapusanFormPage({ user }) {
           </div>
         </div>
       )}
+
+      <MasterAssetPickerModal
+        isOpen={isMasterAssetModalOpen}
+        onClose={() => setIsMasterAssetModalOpen(false)}
+        onSelectAssets={(chosen) => {
+          const mapped = chosen.map((a, idx) => ({
+            id: Date.now() + idx,
+            nama_barang: [a.product_name, a.manufacturer ? `(${a.manufacturer})` : '', a.tier_3 ? `- ${a.tier_3}` : ''].filter(Boolean).join(' ') || 'Aset TI',
+            jumlah: 1,
+            serial_nomor: a.serial_number || '-',
+            no_inventaris: a.ci_id || '-',
+            lokasi_aset: a.site || formData.lokasi || '-',
+            keterangan: [a.status_ci, a.tier_1_display, a.tier_2].filter(Boolean).join(' • ') || 'Dihapuskan',
+          }));
+          setItems((prev) => [...prev, ...mapped]);
+        }}
+      />
     </div>
   );
 }
