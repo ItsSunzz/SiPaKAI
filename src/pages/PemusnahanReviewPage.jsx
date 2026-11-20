@@ -313,9 +313,9 @@ export default function PemusnahanReviewPage({ user }) {
   const allSequentialSteps = [
     {
       step: 1,
-      title: 'Tahap 1: Verifikasi Atasan Langsung',
-      role: step1Resolved.jabatan || 'Atasan Langsung Unit Pemohon',
-      desc: 'Pemeriksaan fisik aset & kewajaran permohonan di unit asal.',
+      title: 'Tahap 1: Atasan Pengguna Aset',
+      role: step1Resolved.jabatan || 'Atasan Pengguna Aset',
+      desc: 'Pemeriksaan fisik aset & kewajaran permohonan di unit pemohon.',
       targetUserId: step1Resolved.targetUserId,
       verifierName: step1Resolved.name,
       verifierJabatan: step1Resolved.jabatan,
@@ -325,9 +325,9 @@ export default function PemusnahanReviewPage({ user }) {
     },
     {
       step: 2,
-      title: 'Tahap 2: Validasi Teknis Pengelola TI',
+      title: 'Tahap 2: Pengelola Aset',
       role: step2Resolved.jabatan || 'Pengelola Aset TI',
-      desc: 'Sanitasi media storage, kelayakan degaussing & tag SAP.',
+      desc: 'Validasi teknis, sanitasi media storage, dan kelayakan pemusnahan.',
       targetUserId: step2Resolved.targetUserId,
       verifierName: step2Resolved.name,
       verifierJabatan: step2Resolved.jabatan,
@@ -337,9 +337,9 @@ export default function PemusnahanReviewPage({ user }) {
     },
     {
       step: 3,
-      title: 'Tahap 3: Penyetuju Akhir (Head of Unit)',
-      role: step3Resolved.jabatan || 'Penyetuju Akhir / Head of Unit',
-      desc: 'Pengesahan Berita Acara & penandatanganan digital terpusat.',
+      title: 'Tahap 3: VP IT Operation / Pimpinan Unit SI Daerah',
+      role: step3Resolved.jabatan || 'VP IT Operation / Pimpinan Unit SI Daerah',
+      desc: 'Menyetujui / Tidak Menyetujui *, pengesahan otorisasi final pemusnahan aset.',
       targetUserId: step3Resolved.targetUserId,
       verifierName: step3Resolved.name,
       verifierJabatan: step3Resolved.jabatan,

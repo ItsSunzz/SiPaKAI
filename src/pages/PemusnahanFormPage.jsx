@@ -24,11 +24,15 @@ import {
   RotateCcw,
   XCircle,
   Edit3,
-  Database
+  Database,
+  Search,
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../services/api';
+import KaiLogo from '../components/KaiLogo';
 import DocumentImportActions from '../components/DocumentImportActions';
-import MasterAssetPickerModal from '../components/MasterAssetPickerModal';
+import MasterAssetPickerModal, { normalizeMasterAsset, getStatusCiBadge } from '../components/MasterAssetPickerModal';
 
 const REVISION_CATEGORY_OPTIONS = [
   'Perbaikan Nomor Seri / ID Aset SAP',
@@ -46,19 +50,47 @@ export default function PemusnahanFormPage({ user }) {
   const isRevisiRoute = location.pathname.endsWith('/revisi');
 
   const [isLoadingDoc, setIsLoadingDoc] = useState(isEditMode);
-  const [isLockedNonDraft, setIsLockedNonDraft] = useState(false);
   const [existingDoc, setExistingDoc] = useState(null);
   const [docStatus, setDocStatus] = useState('');
+
+  // KOP Dokumen ISO (Seluruhnya dapat diedit)
+  const [kopNomor, setKopNomor] = useState('FR.SM/TI/011.004/10-2020');
+  const [kopTglTerbit, setKopTglTerbit] = useState('12 Oktober 2020');
+  const [kopStatusRevisi, setKopStatusRevisi] = useState('002-2020');
+  const [kopHalaman, setKopHalaman] = useState('1 dari 1');
+  const [kopJudul, setKopJudul] = useState('FORMULIR PERMOHONAN PEMUSNAHAN ASET PERANGKAT');
+
+  // Identitas Pemohon (Seluruhnya dapat diedit)
+  const [namaPemohon, setNamaPemohon] = useState(user?.name || 'Petugas');
+  const [nipPemohon, setNipPemohon] = useState(user?.nip || '-');
+  const [unitKerja, setUnitKerja] = useState(user?.unit_kerja || user?.location || '');
+  const [isCustomUnitKerja, setIsCustomUnitKerja] = useState(false);
+  const [availableSites, setAvailableSites] = useState([]);
+
+  // Tempat & Tanggal Pengesahan
+  const [tempatPengesahan, setTempatPengesahan] = useState('Yogyakarta');
 
   // Revision form state
   const [revisionNote, setRevisionNote] = useState('');
   const [selectedChanges, setSelectedChanges] = useState([]);
 
   const [assets, setAssets] = useState([
-    { id: 1, nama: 'Server Dell PowerEdge R740', jenis: 'Fisik (Hardware)', sn: 'SN-98214-KAI-SRV', alasan: 'Kerusakan fatal motherboard & melewati batas usia depresiasi 5 tahun' },
-    { id: 2, nama: 'Cisco Catalyst 3850 48-Port PoE', jenis: 'Jaringan (Network)', sn: 'MAC-7721-CC-081', alasan: 'Port modul korsleting sambaran petir, tidak dapat direparasi' }
+    { id: 1, nama: 'Server Dell PowerEdge R740', jenis: 'Fisik', sn: 'IT.045.0120.1.B060.00001', alasan: 'Kerusakan fatal motherboard & melewati batas usia depresiasi 5 tahun' },
+    { id: 2, nama: 'Cisco Catalyst 3850 48-Port PoE', jenis: 'Jaringan', sn: 'IT.045.0120.1.B060.00002', alasan: 'Port modul korsleting sambaran petir, tidak dapat direparasi' }
   ]);
   const [reference, setReference] = useState('');
+  const [businessArea, setBusinessArea] = useState('B060 - Daop 6 Yogyakarta');
+  const [docDate, setDocDate] = useState(() => {
+    const d = new Date();
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  });
+  const [catatan, setCatatan] = useState('');
+  const [isFetchingRef, setIsFetchingRef] = useState(false);
+
+  // Master asset auto-suggest state
+  const [masterAssets, setMasterAssets] = useState([]);
+  const [isLoadingMasterAssets, setIsLoadingMasterAssets] = useState(false);
+  const [activeSuggest, setActiveSuggest] = useState(null); // { index: number, field: 'nama' | 'sn', query: string }
 
   // Approvers state for the 3-tier approval chain
   const [approvers, setApprovers] = useState([]);
@@ -75,6 +107,179 @@ export default function PemusnahanFormPage({ user }) {
   const [isMasterAssetModalOpen, setIsMasterAssetModalOpen] = useState(false);
 
   const isRevisionMode = isEditMode && (isRevisiRoute || docStatus === 'rejected' || docStatus === 'ditolak');
+
+  // Ambil Nomor Referensi Otomatis dari Backend
+  const fetchAutoReferenceNumber = async () => {
+    try {
+      setIsFetchingRef(true);
+      const res = await api.getReferenceNumber('dsp01');
+      const generated = res?.nomor_referensi || res?.reference_number || res?.number;
+      if (generated) {
+        setReference(generated);
+      }
+    } catch (err) {
+      console.warn('Gagal mengambil nomor referensi otomatis dari backend:', err);
+      // Fallback format resmi jika backend offline
+      const now = new Date();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const y = now.getFullYear();
+      setReference(`PMH/${m}/${y}/0001`);
+    } finally {
+      setIsFetchingRef(false);
+    }
+  };
+
+  // Sinkronisasi otomatis data profil user ke form
+  useEffect(() => {
+    if (user) {
+      if (user.business_area) {
+        setBusinessArea(user.business_area);
+      } else if (user.location) {
+        setBusinessArea(user.location);
+      }
+      if (!isEditMode) {
+        if (user.name) setNamaPemohon(user.name);
+        if (user.nip) setNipPemohon(user.nip);
+        if (user.unit_kerja) setUnitKerja(user.unit_kerja);
+      }
+    }
+  }, [user, isEditMode]);
+
+  // Ambil nomor referensi otomatis dari backend saat buat dokumen baru
+  useEffect(() => {
+    if (!isEditMode && !reference) {
+      fetchAutoReferenceNumber();
+    }
+  }, [isEditMode]);
+
+  // Load master assets for autosuggest and extract distinct sites
+  useEffect(() => {
+    let isMounted = true;
+    const fetchMasterAssets = async () => {
+      try {
+        setIsLoadingMasterAssets(true);
+        const res = await api.getAssets();
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const normalized = list.map(normalizeMasterAsset);
+        if (isMounted) {
+          setMasterAssets(normalized);
+
+          // Ekstrak Site+ unik dari database master aset Daop 6
+          const dbSites = Array.from(
+            new Set(
+              normalized
+                .map((a) => a.site || a.lokasi || a.location)
+                .filter(Boolean)
+                .map((s) => String(s).trim())
+            )
+          ).filter(Boolean);
+
+          const defaultDaopSites = [
+            '9160 - Information Sys',
+            '9160 - Sta. LPN (Lempuyangan)',
+            '9160 - Sta. YK (Yogyakarta)',
+            '9160 - Sta. SLO (Solo Balapan)',
+            '9160 - Sta. KT (Klaten)',
+            '9160 - Sta. PWS (Purwosari)',
+            '9160 - Sta. WT (Wates)',
+            '9160 - Dipo Lokomotif YK',
+            'B060 - Daop 6 Yogyakarta',
+            'Unit Sistem Informasi Daop 6',
+            'Unit Sarana Daop 6',
+            'Unit Operasi Daop 6',
+          ];
+
+          const combinedSites = Array.from(new Set([...dbSites, ...defaultDaopSites])).sort();
+          setAvailableSites(combinedSites);
+        }
+      } catch (e) {
+        console.warn('Gagal memuat master aset untuk autosuggest:', e);
+      } finally {
+        if (isMounted) setIsLoadingMasterAssets(false);
+      }
+    };
+    fetchMasterAssets();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Close autosuggest dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.asset-autosuggest-wrapper')) {
+        setActiveSuggest(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectSuggest = (index, item) => {
+    const newAssets = [...assets];
+    const brandPart = item.manufacturer ? `(${item.manufacturer})` : '';
+    const tier3Part = item.tier_3 ? `- ${item.tier_3}` : '';
+    const fullName = [item.product_name || item.nama, brandPart, tier3Part].filter(Boolean).join(' ') || item.product_name || item.nama || 'Aset TI';
+    
+    newAssets[index].nama = fullName;
+    newAssets[index].sn = item.ci_id || item.kode_aset || item.serial_number || '';
+    
+    // Klasifikasi jenis aset sesuai dokumen resmi: Fisik, Jaringan, Informasi (HC), Informasi (SC)
+    const t1 = String(item.tier_1 || item.tipe || item.jenis_aset || '').toLowerCase();
+    if (t1.includes('network') || t1.includes('jaringan')) {
+      newAssets[index].jenis = 'Jaringan';
+    } else if (t1.includes('soft') || t1.includes('app') || t1.includes('informasi') || t1.includes('lisensi')) {
+      newAssets[index].jenis = 'Informasi (SC)';
+    } else if (t1.includes('hardcopy') || t1.includes('hc') || t1.includes('dokumen')) {
+      newAssets[index].jenis = 'Informasi (HC)';
+    } else {
+      newAssets[index].jenis = 'Fisik';
+    }
+
+    // Default alasan yang relevan jika belum diisi pemohon
+    if (!newAssets[index].alasan || newAssets[index].alasan.trim() === '' || newAssets[index].alasan.includes('Kerusakan fatal motherboard')) {
+      const statusCi = (item.status_ci || '').toLowerCase();
+      if (statusCi.includes('end of life')) {
+        newAssets[index].alasan = 'Masa pakai teknis habis (End of Life) & melewati masa depresiasi 5 tahun';
+      } else if (statusCi.includes('repair')) {
+        newAssets[index].alasan = 'Kerusakan fatal perangkat keras & tidak ekonomis untuk direparasi';
+      } else if (statusCi.includes('inventory')) {
+        newAssets[index].alasan = 'Perangkat usang (obsolete) di gudang & tidak kompatibel dengan operasional saat ini';
+      } else {
+        newAssets[index].alasan = 'Penurunan performa signifikan & melewati batas usia operasional teknis';
+      }
+    }
+
+    setAssets(newAssets);
+    setActiveSuggest(null);
+  };
+
+  const getFilteredSuggestions = (query) => {
+    if (!query || typeof query !== 'string') return [];
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) return [];
+
+    return masterAssets
+      .filter((item) => {
+        const ci = (item.ci_id || item.kode_aset || '').toLowerCase();
+        const nm = (item.product_name || item.nama || '').toLowerCase();
+        const mf = (item.manufacturer || item.merk_tipe || '').toLowerCase();
+        const sn = (item.serial_number || item.nomor_seri || '').toLowerCase();
+        const st = (item.site || item.lokasi || '').toLowerCase();
+        const t2 = (item.tier_2 || '').toLowerCase();
+        const t3 = (item.tier_3 || '').toLowerCase();
+        return (
+          ci.includes(q) ||
+          nm.includes(q) ||
+          mf.includes(q) ||
+          sn.includes(q) ||
+          st.includes(q) ||
+          t2.includes(q) ||
+          t3.includes(q)
+        );
+      })
+      .slice(0, 8);
+  };
 
   // Fetch all approvers from backend (all=1 ensures complete list of officials)
   useEffect(() => {
@@ -132,13 +337,6 @@ export default function PemusnahanFormPage({ user }) {
           const status = (doc.status || '').toLowerCase();
           setDocStatus(status);
 
-          // Lock only if document is neither draft nor rejected (unless explicitly opened via /revisi for testing)
-          if (status && status !== 'draft' && status !== 'draf' && status !== 'rejected' && status !== 'ditolak' && !isRevisiRoute) {
-            setIsLockedNonDraft(true);
-          } else {
-            setIsLockedNonDraft(false);
-          }
-
           if (status === 'rejected' || status === 'ditolak' || isRevisiRoute) {
             api.getDocumentRevision(id)
               .then((revRes) => {
@@ -155,6 +353,28 @@ export default function PemusnahanFormPage({ user }) {
 
           if (d.nomor_referensi || doc.nomor || doc.number) {
             setReference(d.nomor_referensi || doc.nomor || doc.number || '');
+          }
+          if (d.business_area || d.lokasi) {
+            setBusinessArea(d.business_area || d.lokasi);
+          }
+          if (d.catatan || d.keterangan) {
+            setCatatan(d.catatan || d.keterangan);
+          }
+          if (d.nama_pemohon) setNamaPemohon(d.nama_pemohon);
+          if (d.nip_pemohon) setNipPemohon(d.nip_pemohon);
+          if (d.unit_kerja !== undefined) {
+            setUnitKerja(d.unit_kerja || '');
+          }
+          if (d.tempat_pengesahan) setTempatPengesahan(d.tempat_pengesahan);
+          if (d.kop_nomor) setKopNomor(d.kop_nomor);
+          if (d.kop_tgl_terbit) setKopTglTerbit(d.kop_tgl_terbit);
+          if (d.kop_status_revisi) setKopStatusRevisi(d.kop_status_revisi);
+          if (d.kop_halaman) setKopHalaman(d.kop_halaman);
+          if (d.kop_judul) setKopJudul(d.kop_judul);
+          if (d.tanggal_permohonan) {
+            try {
+              setDocDate(new Date(d.tanggal_permohonan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }));
+            } catch (e) {}
           }
 
           // Restore chosen verifiers from doc.data, approval_chain, approvals, or localStorage backup
@@ -186,13 +406,20 @@ export default function PemusnahanFormPage({ user }) {
 
           const docItems = doc.items || d.items;
           if (Array.isArray(docItems) && docItems.length > 0) {
-            setAssets(docItems.map((it, idx) => ({
-              id: it.id || idx + 1,
-              nama: it.nama_aset || it.nama || '',
-              jenis: it.jenis_aset ? (it.jenis_aset === 'Jaringan' ? 'Jaringan (Network)' : it.jenis_aset === 'Informasi' ? 'Lisensi/Software' : 'Fisik (Hardware)') : (it.jenis || 'Fisik (Hardware)'),
-              sn: it.id_aset || it.sn || it.serial_number || '',
-              alasan: it.alasan_pemusnahan || it.alasan || ''
-            })));
+            setAssets(docItems.map((it, idx) => {
+              const jRaw = it.jenis_aset || it.jenis || '';
+              let jNorm = 'Fisik';
+              if (jRaw.includes('Jaringan')) jNorm = 'Jaringan';
+              else if (jRaw.includes('HC') || jRaw.includes('Hardcopy')) jNorm = 'Informasi (HC)';
+              else if (jRaw.includes('SC') || jRaw.includes('Softcopy') || jRaw.includes('Lisensi') || jRaw.includes('Software') || jRaw.includes('Informasi')) jNorm = 'Informasi (SC)';
+              return {
+                id: it.id || idx + 1,
+                nama: it.nama_aset || it.nama || '',
+                jenis: jNorm,
+                sn: it.id_aset || it.sn || it.serial_number || '',
+                alasan: it.alasan_pemusnahan || it.alasan || ''
+              };
+            }));
           }
         }
       } catch (err) {
@@ -311,7 +538,7 @@ export default function PemusnahanFormPage({ user }) {
 
       const itemsToSave = (validAssets.length > 0 ? validAssets : assets).map((a, idx) => ({
         nama_aset: (a.nama || '').trim(),
-        jenis_aset: a.jenis ? (a.jenis.includes('Jaringan') ? 'Jaringan' : a.jenis.includes('Lisensi') ? 'Informasi' : 'Fisik') : 'Fisik',
+        jenis_aset: a.jenis || 'Fisik',
         id_aset: a.sn?.trim() || `AST-KAI-${Date.now().toString().slice(-4)}-${idx + 1}`,
         alasan_pemusnahan: a.alasan?.trim() || 'Kerusakan fatal & melewati batas usia pemakaian teknis',
       }));
@@ -354,11 +581,19 @@ export default function PemusnahanFormPage({ user }) {
           ? `Revisi Permohonan (#${nextRevisiCount}): ${revisionNote.trim()}`
           : undefined,
         data: {
-          tanggal_permohonan: existingDoc?.data?.tanggal_permohonan || new Date().toISOString().split('T')[0],
-          nama_pemohon: existingDoc?.data?.nama_pemohon || user?.name,
-          nip_pemohon: existingDoc?.data?.nip_pemohon || user?.nip,
-          unit_kerja: existingDoc?.data?.unit_kerja || user?.location || 'Unit Kantor Pusat',
+          tanggal_permohonan: docDate || existingDoc?.data?.tanggal_permohonan || new Date().toISOString().split('T')[0],
+          nama_pemohon: namaPemohon || user?.name || 'Petugas',
+          nip_pemohon: nipPemohon || user?.nip || '-',
+          unit_kerja: unitKerja && unitKerja.trim() ? unitKerja.trim() : null,
           nomor_referensi: reference || undefined,
+          business_area: businessArea || undefined,
+          catatan: catatan || undefined,
+          tempat_pengesahan: tempatPengesahan || 'Yogyakarta',
+          kop_nomor: kopNomor,
+          kop_tgl_terbit: kopTglTerbit,
+          kop_status_revisi: kopStatusRevisi,
+          kop_halaman: kopHalaman,
+          kop_judul: kopJudul,
           verifikator_1_id: v1Num,
           verifikator_2_id: v2Num,
           verifikator_3_id: v3Num,
@@ -540,19 +775,20 @@ export default function PemusnahanFormPage({ user }) {
               if (importedData?.nomor_referensi) setReference(importedData.nomor_referensi);
               if (Array.isArray(importedItems) && importedItems.length > 0) {
                 setAssets(
-                  importedItems.map((it, idx) => ({
-                    id: Date.now() + idx,
-                    nama: it.nama_aset || it.nama || '',
-                    jenis: it.jenis_aset
-                      ? it.jenis_aset === 'Jaringan'
-                        ? 'Jaringan (Network)'
-                        : it.jenis_aset === 'Informasi'
-                        ? 'Lisensi/Software'
-                        : 'Fisik (Hardware)'
-                      : 'Fisik (Hardware)',
-                    sn: it.id_aset || it.no_inventaris || it.sn || '',
-                    alasan: it.alasan_pemusnahan || it.alasan || it.keterangan || '',
-                  }))
+                  importedItems.map((it, idx) => {
+                    const jRaw = it.jenis_aset || it.jenis || '';
+                    let jNorm = 'Fisik';
+                    if (jRaw.includes('Jaringan')) jNorm = 'Jaringan';
+                    else if (jRaw.includes('HC') || jRaw.includes('Hardcopy')) jNorm = 'Informasi (HC)';
+                    else if (jRaw.includes('SC') || jRaw.includes('Softcopy') || jRaw.includes('Lisensi') || jRaw.includes('Software') || jRaw.includes('Informasi')) jNorm = 'Informasi (SC)';
+                    return {
+                      id: Date.now() + idx,
+                      nama: it.nama_aset || it.nama || '',
+                      jenis: jNorm,
+                      sn: it.id_aset || it.no_inventaris || it.sn || it.kode_aset || '',
+                      alasan: it.alasan_pemusnahan || it.alasan || it.keterangan || '',
+                    };
+                  })
                 );
               }
               setSubmitSuccess('Data hasil import berhasil dimuat ke dalam formulir DSP-01.');
@@ -606,23 +842,22 @@ export default function PemusnahanFormPage({ user }) {
         </div>
       </div>
 
-      {/* Alert if document is locked non-draft and not rejected */}
-      {isLockedNonDraft && (
-        <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-sm animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Dokumen Sedang Diproses / Telah Disetujui</span>
-              <p className="text-xs text-amber-800 mt-0.5">Dokumen ini sedang berada dalam alur verifikasi atau telah disahkan, sehingga tidak dapat disunting kembali.</p>
-            </div>
+      {/* Banner informasi mode sunting */}
+      {docStatus && docStatus !== 'draft' && docStatus !== 'draf' && !isRevisionMode && (
+        <div className="mb-6 p-3.5 bg-blue-50 border border-blue-200 text-[#0b2046] rounded-xl flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Info className="w-4 h-4 text-[#f05a22] shrink-0" />
+            <span>Mode Sunting Dokumen Aktif: Anda dapat mengedit seluruh bagian formulir, parameter nomor, unit kerja, tabel aset, catatan, dan pejabat pengesahan.</span>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate(`/pemusnahan/${id}`)}
-            className="px-3.5 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shrink-0 transition-colors"
-          >
-            Lihat Status
-          </button>
+          {id && (
+            <button
+              type="button"
+              onClick={() => navigate(`/pemusnahan/${id}`)}
+              className="px-3 py-1 bg-white border border-blue-200 text-[#0b2046] font-bold rounded-lg text-xs hover:bg-blue-100 transition-colors cursor-pointer"
+            >
+              Lihat Detail
+            </button>
+          )}
         </div>
       )}
 
@@ -757,623 +992,738 @@ export default function PemusnahanFormPage({ user }) {
           </section>
         )}
 
-        {/* Bagian 1: Header & Identitas */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <div className="border-l-4 border-[#f05a22] px-6 py-4 flex justify-between items-center bg-white border-b border-slate-100">
-            <h2 className="text-base font-bold text-[#0b2046]">Bagian 1: Informasi Header & Identitas Pemohon</h2>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded border border-blue-100 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" /> Data SSO Terautentikasi
-            </span>
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">Tanggal Pengajuan</label>
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                {today}
+        {/* === SHEET KERTAS FORMULIR RESMI KAI (SESUAI GAMBAR & TEMPLATE DOCX FR-011.004) === */}
+        <div className="w-full bg-white border border-slate-300 shadow-md p-6 sm:p-10 font-sans text-slate-900 rounded-none md:rounded-lg">
+          {/* 1. KOP DOKUMEN RESMI KAI (Seluruhnya Dapat Diedit) */}
+          <div className="border border-black">
+            {/* Baris 1: Logo, Instansi, dan Metadata ISO */}
+            <div className="grid grid-cols-12 border-b border-black">
+              {/* Kolom 1: Logo KAI */}
+              <div className="col-span-3 border-r border-black p-3 flex items-center justify-center bg-white">
+                <KaiLogo className="h-10 sm:h-12 w-auto" />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Otomatis sinkron dengan server NTP KAI</p>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">Nama & NIP Pemohon</label>
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-[#0b2046]">
-                <User className="w-4 h-4 text-slate-400" />
-                {existingDoc?.data?.nama_pemohon || user?.name} — {existingDoc?.data?.nip_pemohon || user?.nip}
+              {/* Kolom 2: PT Kereta Api Indonesia (Persero) */}
+              <div className="col-span-5 border-r border-black p-3 text-center flex flex-col justify-center bg-white">
+                <div className="font-extrabold text-xs sm:text-sm tracking-wider text-black uppercase">
+                  PT KERETA API INDONESIA (PERSERO)
+                </div>
+                <div className="font-bold text-xs tracking-wider text-black uppercase mt-0.5">
+                  SISTEM INFORMASI
+                </div>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Jabatan: {user?.roleLabel || 'Staff Pengusul'}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">Unit Kerja Pengusul</label>
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
-                <Building className="w-4 h-4 text-slate-400" />
-                {existingDoc?.data?.unit_kerja || user?.location || 'Unit Kantor Pusat'}
+              {/* Kolom 3: Metadata Tabel ISO Dokumen (Editable) */}
+              <div className="col-span-4 p-0 bg-white text-[11px] leading-tight">
+                <table className="w-full h-full border-collapse">
+                  <tbody>
+                    <tr className="border-b border-black">
+                      <td className="w-24 px-2 py-1 font-semibold border-r border-black text-black">Nomor</td>
+                      <td className="px-2 py-0.5 text-black font-mono">
+                        <input
+                          type="text"
+                          value={kopNomor}
+                          onChange={(e) => setKopNomor(e.target.value)}
+                          className="w-full bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-black text-[11px] font-mono px-0.5"
+                          placeholder="Nomor Dokumen"
+                        />
+                      </td>
+                    </tr>
+                    <tr className="border-b border-black">
+                      <td className="px-2 py-1 font-semibold border-r border-black text-black">Tanggal Terbit</td>
+                      <td className="px-2 py-0.5 text-black">
+                        <input
+                          type="text"
+                          value={kopTglTerbit}
+                          onChange={(e) => setKopTglTerbit(e.target.value)}
+                          className="w-full bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-black text-[11px] px-0.5"
+                          placeholder="Tanggal Terbit"
+                        />
+                      </td>
+                    </tr>
+                    <tr className="border-b border-black">
+                      <td className="px-2 py-1 font-semibold border-r border-black text-black">Status Revisi</td>
+                      <td className="px-2 py-0.5 text-black">
+                        <input
+                          type="text"
+                          value={kopStatusRevisi}
+                          onChange={(e) => setKopStatusRevisi(e.target.value)}
+                          className="w-full bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-black text-[11px] px-0.5"
+                          placeholder="Status Revisi"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 font-semibold border-r border-black text-black">Halaman</td>
+                      <td className="px-2 py-0.5 text-black">
+                        <input
+                          type="text"
+                          value={kopHalaman}
+                          onChange={(e) => setKopHalaman(e.target.value)}
+                          className="w-full bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-black text-[11px] px-0.5"
+                          placeholder="Halaman"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Aset tercatat dalam buku inventaris unit terkait</p>
             </div>
 
-            <div className="col-span-1 md:col-span-3 mt-1">
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Nomor Referensi Nota Dinas Pendukung / Kajian Teknis <span className="text-slate-400 font-normal float-right">(Opsional)</span>
-              </label>
-              <div className="relative">
-                <FileText className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text" 
-                  value={reference}
-                  disabled={isLockedNonDraft}
-                  onChange={(e) => setReference(e.target.value)}
-                  placeholder="Contoh: ND.TI/PUSAT/X/2026/0122 — Permohonan Afkir Server & Switch"
-                  className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
+            {/* Baris 2: Badge TERBATAS dan Judul Formulir (Editable) */}
+            <div className="grid grid-cols-12">
+              <div className="col-span-3 border-r border-black p-2 flex items-center justify-center bg-white">
+                <span className="border-2 border-[#f05a22] text-[#f05a22] font-black text-xs px-3.5 py-1 rounded tracking-widest uppercase">
+                  TERBATAS
+                </span>
+              </div>
+              <div className="col-span-9 p-2 text-center flex items-center justify-center bg-white">
+                <input
+                  type="text"
+                  value={kopJudul}
+                  onChange={(e) => setKopJudul(e.target.value)}
+                  className="w-full text-center bg-transparent border-0 font-black text-xs sm:text-sm tracking-wider text-black uppercase focus:outline-none focus:ring-1 focus:ring-black"
+                  placeholder="JUDUL FORMULIR"
                 />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Sertakan nomor arsip digital e-Office KAI untuk validasi cepat oleh verifikator aset.</p>
             </div>
           </div>
-        </section>
 
-        {/* Bagian 2: Daftar Aset */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <div className="border-l-4 border-[#0b2046] px-6 py-4 flex flex-wrap justify-between items-center gap-2 bg-white border-b border-slate-100">
-            <div>
-              <h2 className="text-base font-bold text-[#0b2046]">Bagian 2: Rincian Daftar Aset yang Diusulkan</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Daftar perangkat TI yang direncanakan untuk dimusnahkan/scrap.</p>
+          {/* 2. KOTAK PARAMETER (No. Ref Otomatis Backend, Tanggal, Business Area Otomatis & Editable) */}
+          <div className="border border-black p-3.5 my-4 space-y-2.5 text-xs text-black bg-white">
+            {/* No. Ref dengan Tombol Ambil Otomatis dari Backend */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="w-28 font-semibold text-black">No. Ref</span>
+              <span className="hidden sm:inline font-semibold">:</span>
+              <div className="flex-1 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="Contoh: ND.TI/PUSAT/X/2026/0122 atau PMH/11/2026/0001"
+                  className="flex-1 px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium text-black font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={fetchAutoReferenceNumber}
+                  disabled={isFetchingRef}
+                  title="Ambil Nomor Referensi Otomatis dari Backend"
+                  className="px-2 py-1 bg-orange-50 hover:bg-orange-100 text-[#0b2046] border border-orange-200 rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {isFetchingRef ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-[#f05a22]" />
+                  ) : (
+                    <Sparkles className="w-3 h-3 text-[#f05a22]" />
+                  )}
+                  <span>Ambil No. Otomatis</span>
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={isLockedNonDraft}
-                onClick={() => setIsMasterAssetModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-[#0b2046] border border-blue-200 hover:bg-blue-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Database className="w-4 h-4 text-[#f05a22]" /> Pilih dari Master Aset
-              </button>
-              <button 
-                type="button"
-                disabled={isLockedNonDraft}
-                onClick={handleAddAsset}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-[#f05a22] border border-orange-200 hover:bg-orange-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" /> Tambah Aset
-              </button>
+
+            {/* Tanggal */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="w-28 font-semibold text-black">Tanggal</span>
+              <span className="hidden sm:inline font-semibold">:</span>
+              <input
+                type="text"
+                value={docDate}
+                onChange={(e) => setDocDate(e.target.value)}
+                placeholder="Tanggal dokumen (contoh: 20 November 2026)"
+                className="flex-1 px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium text-black"
+              />
+            </div>
+
+            {/* Business Area (Otomatis dari backend/profil user & Editable) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="w-28 font-semibold text-black">Business Area</span>
+              <span className="hidden sm:inline font-semibold">:</span>
+              <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                <select
+                  value={businessArea}
+                  onChange={(e) => setBusinessArea(e.target.value)}
+                  className="flex-1 px-2 py-1 border border-slate-300 rounded focus:border-black focus:outline-none bg-white font-medium text-black text-xs"
+                >
+                  <option value="B060 - Daop 6 Yogyakarta">B060 - Daop 6 Yogyakarta</option>
+                  <option value="9160 - Information Systems (Daop 6)">9160 - Information Systems (Daop 6)</option>
+                  <option value="1000 - Kantor Pusat Bandung">1000 - Kantor Pusat Bandung</option>
+                  <option value="2000 - Daop 1 Jakarta">2000 - Daop 1 Jakarta</option>
+                  <option value="3000 - Daop 2 Bandung">3000 - Daop 2 Bandung</option>
+                  <option value="4000 - Daop 3 Cirebon">4000 - Daop 3 Cirebon</option>
+                  <option value="5000 - Daop 4 Semarang">5000 - Daop 4 Semarang</option>
+                  <option value="6000 - Daop 5 Purwokerto">6000 - Daop 5 Purwokerto</option>
+                  <option value="7000 - Daop 7 Madiun">7000 - Daop 7 Madiun</option>
+                  <option value="8000 - Daop 8 Surabaya">8000 - Daop 8 Surabaya</option>
+                  <option value="9000 - Daop 9 Jember">9000 - Daop 9 Jember</option>
+                  {businessArea && ![
+                    'B060 - Daop 6 Yogyakarta',
+                    '9160 - Information Systems (Daop 6)',
+                    '1000 - Kantor Pusat Bandung',
+                    '2000 - Daop 1 Jakarta',
+                    '3000 - Daop 2 Bandung',
+                    '4000 - Daop 3 Cirebon',
+                    '5000 - Daop 4 Semarang',
+                    '6000 - Daop 5 Purwokerto',
+                    '7000 - Daop 7 Madiun',
+                    '8000 - Daop 8 Surabaya',
+                    '9000 - Daop 9 Jember',
+                  ].includes(businessArea) && (
+                    <option value={businessArea}>{businessArea}</option>
+                  )}
+                </select>
+                <input
+                  type="text"
+                  value={businessArea}
+                  onChange={(e) => setBusinessArea(e.target.value)}
+                  placeholder="Ketik manual Business Area..."
+                  className="sm:w-60 px-2 py-1 border border-slate-300 rounded text-xs focus:border-black focus:outline-none bg-white font-medium text-black"
+                />
+              </div>
             </div>
           </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider">
+
+          {/* 3. BLOK IDENTITAS PEMOHON & UNIT KERJA DARI DATABASE SITE+ (Bisa Kosong & Seluruhnya Editable) */}
+          <div className="my-4 text-xs text-black space-y-2.5 bg-white">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+              <span className="sm:col-span-2 font-semibold">Tanggal</span>
+              <div className="sm:col-span-10 flex items-center gap-2">
+                <span>:</span>
+                <input
+                  type="text"
+                  value={docDate}
+                  onChange={(e) => setDocDate(e.target.value)}
+                  className="flex-1 max-w-sm px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium"
+                />
+              </div>
+
+              <span className="sm:col-span-2 font-semibold">Nama &amp; NIP</span>
+              <div className="sm:col-span-10 flex flex-wrap items-center gap-2">
+                <span>:</span>
+                <input
+                  type="text"
+                  value={namaPemohon}
+                  onChange={(e) => setNamaPemohon(e.target.value)}
+                  placeholder="Nama Pemohon"
+                  className="w-48 px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium"
+                />
+                <span>—</span>
+                <input
+                  type="text"
+                  value={nipPemohon}
+                  onChange={(e) => setNipPemohon(e.target.value)}
+                  placeholder="NIP Pemohon"
+                  className="w-36 px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-mono text-slate-700"
+                />
+              </div>
+
+              <span className="sm:col-span-2 font-semibold">Unit Kerja</span>
+              <div className="sm:col-span-10 flex flex-wrap items-center gap-2">
+                <span>:</span>
+                {/* Dropdown Mengambil Database Site+ & Opsi Kosong Sama Sekali */}
+                <select
+                  value={isCustomUnitKerja ? '__custom__' : (unitKerja || '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__custom__') {
+                      setIsCustomUnitKerja(true);
+                    } else {
+                      setIsCustomUnitKerja(false);
+                      setUnitKerja(val);
+                    }
+                  }}
+                  className="px-2 py-1 border border-slate-300 rounded focus:border-black focus:outline-none bg-white font-medium text-xs max-w-sm"
+                >
+                  <option value="">-- Tidak Diisi (Kosong) --</option>
+                  {availableSites.map((st) => (
+                    <option key={st} value={st}>
+                      📍 {st}
+                    </option>
+                  ))}
+                  <option value="__custom__">✏️ Ketik Manual / Custom...</option>
+                </select>
+
+                {/* Input Teks Manual jika user memilih custom atau ingin mengedit */}
+                {isCustomUnitKerja && (
+                  <input
+                    type="text"
+                    value={unitKerja}
+                    onChange={(e) => setUnitKerja(e.target.value)}
+                    placeholder="Ketik nama unit kerja..."
+                    className="flex-1 min-w-[200px] px-2 py-1 border border-slate-300 rounded text-xs focus:border-black focus:outline-none bg-white font-medium"
+                  />
+                )}
+
+                {unitKerja && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnitKerja('');
+                      setIsCustomUnitKerja(false);
+                    }}
+                    className="text-[11px] text-slate-500 hover:text-rose-600 underline cursor-pointer ml-1"
+                    title="Kosongkan Unit Kerja"
+                  >
+                    Kosongkan
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 font-medium italic text-black font-serif">
+              dengan ini mengajukan permohonan pemusnahan aset sebagai berikut:
+            </div>
+          </div>
+
+          {/* 4. TABEL ASET GAYA FORMULIR ISO KAI BERGARIS HITAM (Seluruhnya Editable) */}
+          <div className="overflow-x-auto my-2">
+            <table className="w-full text-left text-xs border-collapse border border-black">
+              <thead className="bg-slate-200 text-black font-bold border-b border-black text-center text-xs">
                 <tr>
-                  <th className="px-5 py-3 w-12 text-center">No</th>
-                  <th className="px-5 py-3">Nama Perangkat / Aset</th>
-                  <th className="px-5 py-3 w-48">Kategori / Jenis</th>
-                  <th className="px-5 py-3 w-48">No. Seri / ID Aset</th>
-                  <th className="px-5 py-3">Alasan Teknis Pemusnahan</th>
-                  <th className="px-5 py-3 w-16 text-center">Aksi</th>
+                  <th className="w-10 border border-black p-2 align-middle">NO</th>
+                  <th className="border border-black p-2 align-middle min-w-[220px]">
+                    <div>NAMA ASET</div>
+                    <div className="text-[10px] font-normal italic normal-case text-slate-700">(berisi nama aset yang akan dimusnahkan)</div>
+                  </th>
+                  <th className="w-48 border border-black p-2 align-middle">
+                    <div>JENIS ASET</div>
+                    <div className="text-[10px] font-normal italic normal-case text-slate-700">(aset fisik, jaringan, informasi (HC/SC))</div>
+                  </th>
+                  <th className="w-52 border border-black p-2 align-middle">
+                    <div>ID ASET</div>
+                    <div className="text-[10px] font-normal italic normal-case text-slate-700">(berisi nomor ID aset)</div>
+                  </th>
+                  <th className="border border-black p-2 align-middle min-w-[200px]">
+                    <div>ALASAN PEMUSNAHAN</div>
+                    <div className="text-[10px] font-normal italic normal-case text-slate-700">(penjelasan mengenai alasan pemusnahan)</div>
+                  </th>
+                  <th className="w-14 border border-black p-2 align-middle text-center">AKSI</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {assets.map((asset, index) => (
-                  <tr key={asset.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-5 py-3.5 text-center font-bold text-slate-500">
-                      {index + 1}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <input 
-                        type="text" 
-                        disabled={isLockedNonDraft}
-                        value={asset.nama} 
-                        onChange={(e) => {
-                          const newAssets = [...assets];
-                          newAssets[index].nama = e.target.value;
-                          setAssets(newAssets);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
-                        placeholder="Contoh: Server HP ProLiant DL380"
-                      />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <select 
-                        disabled={isLockedNonDraft}
-                        value={asset.jenis} 
-                        onChange={(e) => {
-                          const newAssets = [...assets];
-                          newAssets[index].jenis = e.target.value;
-                          setAssets(newAssets);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] text-slate-700 disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="Fisik (Hardware)">Fisik (Hardware)</option>
-                        <option value="Jaringan (Network)">Jaringan (Network)</option>
-                        <option value="Lisensi/Software">Informasi / Lisensi</option>
-                      </select>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <input 
-                        type="text" 
-                        disabled={isLockedNonDraft}
-                        value={asset.sn} 
-                        onChange={(e) => {
-                          const newAssets = [...assets];
-                          newAssets[index].sn = e.target.value;
-                          setAssets(newAssets);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
-                        placeholder="SN-12345 / AST-KAI-01"
-                      />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <input 
-                        type="text" 
-                        disabled={isLockedNonDraft}
-                        value={asset.alasan} 
-                        onChange={(e) => {
-                          const newAssets = [...assets];
-                          newAssets[index].alasan = e.target.value;
-                          setAssets(newAssets);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
-                        placeholder="Penyebab kerusakan / depresiasi..."
-                      />
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <button 
-                        type="button"
-                        disabled={isLockedNonDraft}
-                        onClick={() => handleRemoveAsset(asset.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-30"
-                        title="Hapus baris"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-black">
+                {assets.map((asset, index) => {
+                  const currentQuery = activeSuggest?.index === index ? (activeSuggest.query || '') : '';
+                  const suggestions = activeSuggest?.index === index ? getFilteredSuggestions(currentQuery) : [];
+                  const showSuggest = Boolean(activeSuggest?.index === index && currentQuery.trim().length > 0);
+
+                  return (
+                    <tr key={asset.id} className="hover:bg-slate-50/70">
+                      <td className="border border-black p-2 text-center font-bold text-black align-middle">
+                        {index + 1}
+                      </td>
+
+                      {/* Kolom Nama Aset dengan Auto-suggest */}
+                      <td className="border border-black p-2 align-middle">
+                        <div className="asset-autosuggest-wrapper relative">
+                          <div className="relative">
+                            <input 
+                              type="text" 
+                              value={asset.nama} 
+                              onFocus={() => {
+                                if (asset.nama) setActiveSuggest({ index, field: 'nama', query: asset.nama });
+                              }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const newAssets = [...assets];
+                                newAssets[index].nama = val;
+                                setAssets(newAssets);
+                                setActiveSuggest({ index, field: 'nama', query: val });
+                              }}
+                              className="w-full pl-2 pr-7 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-black font-semibold text-black"
+                              placeholder="Ketik nama aset / merk..."
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                              <Search className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Floating Suggestion Dropdown untuk Nama */}
+                          {showSuggest && activeSuggest.field === 'nama' && (
+                            <div className="absolute left-0 top-full mt-1 w-[380px] sm:w-[440px] max-w-[90vw] bg-white border border-black rounded-lg shadow-2xl z-50 overflow-hidden text-left animate-in fade-in duration-150">
+                              <div className="px-3 py-1.5 bg-slate-100 border-b border-black flex items-center justify-between text-[11px] font-bold text-black">
+                                <div className="flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-[#f05a22]" />
+                                  <span>Saran Master Aset ({suggestions.length})</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveSuggest(null)}
+                                  className="text-slate-500 hover:text-black text-xs px-1 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                {suggestions.length > 0 ? (
+                                  suggestions.map((item, sIdx) => {
+                                    const ciBadge = getStatusCiBadge(item.status_ci, item.is_destroyed);
+                                    return (
+                                      <button
+                                        key={item.id || item.ci_id || sIdx}
+                                        type="button"
+                                        disabled={item.is_destroyed}
+                                        onClick={() => handleSelectSuggest(index, item)}
+                                        className="w-full p-2 hover:bg-orange-50 text-left transition-colors flex flex-col gap-0.5 disabled:opacity-50 cursor-pointer"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-mono font-bold text-xs text-[#0b2046] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
+                                            {item.ci_id || item.kode_aset || '-'}
+                                          </span>
+                                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${ciBadge.badgeClass}`}>
+                                            {ciBadge.label}
+                                          </span>
+                                        </div>
+                                        <div className="font-semibold text-xs text-black truncate">
+                                          {item.product_name || item.nama} {item.manufacturer ? `(${item.manufacturer})` : ''}
+                                        </div>
+                                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                          <span>Tier: {item.tier_1 || 'Fisik'} • {item.tier_2 || '-'}</span>
+                                          <span className="truncate max-w-[150px] text-slate-600 font-medium">📍 {item.site || 'Daop 6'}</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="p-3 text-center text-xs text-slate-500">
+                                    Tidak ada aset cocok dengan "{activeSuggest.query}".
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Kolom Jenis Aset */}
+                      <td className="border border-black p-2 align-middle">
+                        <select 
+                          value={asset.jenis} 
+                          onChange={(e) => {
+                            const newAssets = [...assets];
+                            newAssets[index].jenis = e.target.value;
+                            setAssets(newAssets);
+                          }}
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-black text-black font-medium"
+                        >
+                          <option value="Fisik">Fisik (Hardware)</option>
+                          <option value="Jaringan">Jaringan (Network)</option>
+                          <option value="Informasi (HC)">Informasi HC (Hardcopy)</option>
+                          <option value="Informasi (SC)">Informasi SC (Softcopy)</option>
+                        </select>
+                      </td>
+
+                      {/* Kolom ID Aset dengan Auto-suggest */}
+                      <td className="border border-black p-2 align-middle">
+                        <div className="asset-autosuggest-wrapper relative">
+                          <div className="relative">
+                            <input 
+                              type="text" 
+                              value={asset.sn} 
+                              onFocus={() => {
+                                if (asset.sn) setActiveSuggest({ index, field: 'sn', query: asset.sn });
+                              }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const newAssets = [...assets];
+                                newAssets[index].sn = val;
+                                setAssets(newAssets);
+                                setActiveSuggest({ index, field: 'sn', query: val });
+                              }}
+                              className="w-full pl-2 pr-7 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-medium focus:outline-none focus:border-black text-black"
+                              placeholder="Ketik ID Aset / CI ID..."
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                              <Search className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Floating Suggestion Dropdown untuk ID Aset */}
+                          {showSuggest && activeSuggest.field === 'sn' && (
+                            <div className="absolute left-0 top-full mt-1 w-[380px] sm:w-[440px] max-w-[90vw] bg-white border border-black rounded-lg shadow-2xl z-50 overflow-hidden text-left animate-in fade-in duration-150">
+                              <div className="px-3 py-1.5 bg-slate-100 border-b border-black flex items-center justify-between text-[11px] font-bold text-black">
+                                <div className="flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-[#f05a22]" />
+                                  <span>Saran CI ID / No. Seri ({suggestions.length})</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveSuggest(null)}
+                                  className="text-slate-500 hover:text-black text-xs px-1 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                {suggestions.length > 0 ? (
+                                  suggestions.map((item, sIdx) => {
+                                    const ciBadge = getStatusCiBadge(item.status_ci, item.is_destroyed);
+                                    return (
+                                      <button
+                                        key={item.id || item.ci_id || sIdx}
+                                        type="button"
+                                        disabled={item.is_destroyed}
+                                        onClick={() => handleSelectSuggest(index, item)}
+                                        className="w-full p-2 hover:bg-orange-50 text-left transition-colors flex flex-col gap-0.5 disabled:opacity-50 cursor-pointer"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-mono font-bold text-xs text-[#0b2046] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
+                                            {item.ci_id || item.kode_aset || '-'}
+                                          </span>
+                                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${ciBadge.badgeClass}`}>
+                                            {ciBadge.label}
+                                          </span>
+                                        </div>
+                                        <div className="font-semibold text-xs text-black truncate">
+                                          {item.product_name || item.nama} {item.manufacturer ? `(${item.manufacturer})` : ''}
+                                        </div>
+                                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                          <span>SN: {item.serial_number || '-'}</span>
+                                          <span className="truncate max-w-[150px] text-slate-600 font-medium">📍 {item.site || 'Daop 6'}</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="p-3 text-center text-xs text-slate-500">
+                                    Tidak ada ID aset cocok dengan "{activeSuggest.query}".
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Kolom Alasan Pemusnahan */}
+                      <td className="border border-black p-2 align-middle">
+                        <input 
+                          type="text" 
+                          value={asset.alasan} 
+                          onChange={(e) => {
+                            const newAssets = [...assets];
+                            newAssets[index].alasan = e.target.value;
+                            setAssets(newAssets);
+                          }}
+                          className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-black text-black"
+                          placeholder="Penjelasan alasan pemusnahan..."
+                        />
+                      </td>
+
+                      {/* Aksi Hapus */}
+                      <td className="border border-black p-2 text-center align-middle">
+                        <button 
+                          type="button"
+                          onClick={() => handleRemoveAsset(asset.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                          title="Hapus baris"
+                        >
+                          <Trash2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-slate-400" />
-              <span>Total aset yang diusulkan: <strong>{assets.length} item</strong></span>
-            </div>
-            <span className="text-[11px] text-slate-400">Pastikan nomor seri/ID aset sesuai dengan barcode label fisik.</span>
-          </div>
-        </section>
 
-        {/* Bagian 3: Alur Persetujuan (Approval Routing) - Memilih Ketiga Verifikator */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-          <div className="border-l-4 border-emerald-600 px-6 py-4 bg-white border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-bold text-[#0b2046] flex items-center gap-2">
-                <span>Bagian 3: Alur Persetujuan Berjenjang (Sesuai Pilihan Pemohon)</span>
-                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                  3 Tingkat Verifikasi
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Silakan pilih ketiga pejabat verifikator berjenjang yang akan memproses disposisi dokumen ini secara berurutan.
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Users className="w-4 h-4 text-blue-600" />
-              <span>Daftar Pejabat Otorisator KAI ({approvers.length} Pejabat)</span>
-            </div>
+          {/* Tombol Tambah Baris (Oranye persis seperti di gambar user) */}
+          <div className="flex flex-wrap justify-end items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setIsMasterAssetModalOpen(true)}
+              className="px-3 py-1.5 border border-slate-400 bg-blue-50 text-[#0b2046] hover:bg-blue-100 font-bold text-xs rounded shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5 text-[#f05a22]" /> Pilih dari Master Aset
+            </button>
+            <button
+              type="button"
+              onClick={handleAddAsset}
+              className="px-4 py-1.5 bg-[#f05a22] hover:bg-[#d94a18] text-white font-bold text-xs rounded shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Tambah Baris
+            </button>
           </div>
 
-          {hasDuplicateVerifiers && (
-            <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span><strong>Catatan:</strong> Terdapat pejabat yang sama dipilih pada lebih dari satu jenjang verifikasi. Disarankan memilih pejabat yang berbeda untuk menjaga independensi alur otorisasi.</span>
-            </div>
-          )}
+          {/* Footer Dokumen Persis Gambar & DOCX */}
+          <div className="my-2 text-xs italic text-slate-500 font-serif">
+            -- End of File --
+          </div>
+          <div className="my-2 text-xs italic text-black font-serif">
+            Demikian permohonan ini disampaikan.
+          </div>
 
-          <div className="p-6">
-            {/* Diagram Alur Persetujuan Sekuensial (Dinamis sesuai Pilihan Pemohon) */}
-            <div className="mb-6 p-4.5 bg-gradient-to-r from-orange-50/60 via-blue-50/50 to-emerald-50/60 rounded-xl border border-slate-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5">
-                <div className="flex items-center gap-2">
-                  <GitBranch className="w-4 h-4 text-[#0b2046]" />
-                  <span className="text-xs font-bold text-[#0b2046] uppercase tracking-wider">
-                    Diagram Alur Persetujuan Berjenjang (Sekuensial Sesuai Pilihan Pemohon)
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-700 bg-white/90 px-2.5 py-1 rounded border border-slate-200 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>Wajib Berurutan: Tahap 1 ➔ Tahap 2 ➔ Tahap 3</span>
-                </div>
-              </div>
-
-              {/* Stepper Pipeline Dinamis */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 relative">
-                {/* Step 1 Node */}
-                <div className={`p-3.5 rounded-xl border transition-all ${
-                  verifikator1 ? 'bg-white border-orange-300 shadow-xs ring-1 ring-orange-200' : 'bg-white/70 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-orange-100 text-orange-800">
-                      Tahap 1 • Giliran Pertama
-                    </span>
-                    <span className="text-[10px] font-bold text-orange-600">Urutan #1</span>
-                  </div>
-                  <div className="font-bold text-xs text-slate-900 truncate">
-                    {v1Data ? v1Data.name : 'Verifikasi Atasan Langsung'}
-                  </div>
-                  <div className="text-[11px] font-semibold text-orange-700 mt-0.5 truncate">
-                    {v1Data ? `${v1Data.jabatan} (${v1Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {v1Data
-                      ? `NIP: ${v1Data.nip} • Pemeriksaan fisik aset & kewajaran usulan`
-                      : 'Memeriksa fisik aset & kewajaran permohonan di unit kerja.'}
-                  </p>
-                </div>
-
-                {/* Step 2 Node */}
-                <div className={`p-3.5 rounded-xl border transition-all ${
-                  verifikator2 ? 'bg-white border-blue-300 shadow-xs ring-1 ring-blue-200' : 'bg-white/70 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-900">
-                      Tahap 2 • Setelah Tahap 1 OK
-                    </span>
-                    <span className="text-[10px] font-bold text-blue-700">Urutan #2</span>
-                  </div>
-                  <div className="font-bold text-xs text-slate-900 truncate">
-                    {v2Data ? v2Data.name : 'Validasi Teknis Pengelola TI'}
-                  </div>
-                  <div className="text-[11px] font-semibold text-blue-700 mt-0.5 truncate">
-                    {v2Data ? `${v2Data.jabatan} (${v2Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {v2Data
-                      ? `NIP: ${v2Data.nip} • Uji sanitasi storage, degaussing & tag SAP`
-                      : 'Uji sanitasi storage, kelayakan degaussing & tag SAP.'}
-                  </p>
-                </div>
-
-                {/* Step 3 Node */}
-                <div className={`p-3.5 rounded-xl border transition-all ${
-                  verifikator3 ? 'bg-white border-emerald-300 shadow-xs ring-1 ring-emerald-200' : 'bg-white/70 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      Tahap 3 • Otorisasi Final
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-700">Urutan #3</span>
-                  </div>
-                  <div className="font-bold text-xs text-slate-900 truncate">
-                    {v3Data ? v3Data.name : 'Penyetuju Akhir (Head of Unit)'}
-                  </div>
-                  <div className="text-[11px] font-semibold text-emerald-700 mt-0.5 truncate">
-                    {v3Data ? `${v3Data.jabatan} (${v3Data.unit_kerja})` : 'Belum dipilih oleh pemohon'}
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {v3Data
-                      ? `NIP: ${v3Data.nip} • Pengesahan akhir & tanda tangan digital`
-                      : 'Pengesahan Berita Acara & penandatanganan digital terpusat.'}
-                  </p>
-                </div>
-              </div>
+          {/* 5. BAGIAN CATATAN & PENGESAHAN 3 PEJABAT (Seluruhnya Editable) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 my-6 pt-2">
+            {/* Kotak Catatan Kiri */}
+            <div className="md:col-span-5 border border-black p-3.5 text-xs flex flex-col bg-white">
+              <div className="font-bold text-black mb-1">Catatan :</div>
+              <textarea
+                rows={4}
+                value={catatan}
+                onChange={(e) => setCatatan(e.target.value)}
+                placeholder="Tuliskan catatan tambahan..."
+                className="w-full flex-1 p-2 bg-slate-50/50 border border-slate-200 rounded text-xs text-black focus:outline-none focus:border-black resize-none"
+              />
             </div>
 
-            {isLoadingApprovers ? (
-              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
-                <Loader2 className="w-6 h-6 animate-spin text-orange-600" />
-                <span className="text-xs">Memuat daftar pejabat otorisator...</span>
+            {/* Blok Tanda Tangan / Otorisasi Kanan (3 Pejabat Resmi DOCX FR-011.004, Editable) */}
+            <div className="md:col-span-7 flex flex-col justify-between text-xs text-black bg-white">
+              <div className="flex items-center justify-end gap-1 font-medium text-xs mb-2">
+                <input
+                  type="text"
+                  value={tempatPengesahan}
+                  onChange={(e) => setTempatPengesahan(e.target.value)}
+                  className="w-24 text-right px-1 py-0.5 border-b border-transparent hover:border-slate-300 focus:border-black focus:outline-none bg-transparent"
+                  placeholder="Kota"
+                />
+                <span>,</span>
+                <input
+                  type="text"
+                  value={docDate}
+                  onChange={(e) => setDocDate(e.target.value)}
+                  className="w-36 px-1 py-0.5 border-b border-transparent hover:border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium"
+                  placeholder="Tanggal"
+                />
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-                {/* 1. Verifikator 1 */}
-                <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-5 flex flex-col justify-between hover:border-orange-300 transition-all shadow-2xs">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                {/* Pejabat 1: Atasan Pengguna Aset */}
+                <div className="flex flex-col justify-between p-2 bg-slate-50/60 border border-slate-300 rounded">
                   <div>
-                    {/* Header Card */}
-                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-[#f05a22] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                          1
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-tight">Verifikator 1</h4>
-                          <span className="text-[10px] text-orange-600 font-semibold block">Pemeriksaan Awal</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-orange-100 text-orange-800 truncate max-w-[120px]">
-                        {v1Data?.jabatan || 'Atasan Langsung'}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      Memeriksa kewajaran usulan penghapusan dan kondisi riil aset di unit pemohon.
-                    </p>
-
-                    {/* Selector */}
-                    <div className="mb-4">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                        Pilih Pejabat Verifikator 1 <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        disabled={isLockedNonDraft}
-                        value={verifikator1}
-                        onChange={(e) => setVerifikator1(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#f05a22] disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="">-- Pilih Pejabat --</option>
-                        {approvers.map((appr) => {
-                          const displayName = appr.name || appr.nama || 'Pejabat';
-                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
-                          return (
-                            <option key={appr.id} value={appr.id}>
-                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
+                    <div className="font-bold text-[11px] text-black">Atasan Pengguna Aset</div>
+                    <select
+                      value={verifikator1}
+                      onChange={(e) => setVerifikator1(e.target.value)}
+                      className="w-full mt-1.5 p-1 border border-slate-300 rounded text-[10px] bg-white text-slate-800 focus:outline-none"
+                    >
+                      <option value="">-- Pilih Pejabat --</option>
+                      {approvers.map((appr) => (
+                        <option key={appr.id} value={appr.id}>
+                          {appr.name || appr.nama}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Profile Summary Card */}
-                  {v1Data ? (
-                    <div className="bg-white p-3.5 rounded-lg border border-slate-200 flex items-center gap-3">
-                      <img 
-                        src={v1Data.avatar} 
-                        alt={v1Data.name} 
-                        className="w-10 h-10 rounded-full border border-slate-200 shrink-0" 
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-xs text-slate-900 truncate">{v1Data.name}</div>
-                        <div className="text-[11px] text-slate-500 truncate">NIP: {v1Data.nip}</div>
-                        <div className="text-[10px] font-semibold text-[#f05a22] mt-0.5 truncate">
-                          {v1Data.jabatan} • {v1Data.unit_kerja}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-100/70 p-3 rounded-lg border border-dashed border-slate-300 text-center text-[11px] text-slate-400">
-                      Belum ada verifikator dipilih
-                    </div>
-                  )}
+                  <div className="my-5 text-slate-400 text-xs">
+                    ( ___________________ )
+                  </div>
+                  <div className="text-[10px] leading-tight">
+                    <div className="font-bold text-black truncate">{v1Data?.name || 'Nama Pejabat'}</div>
+                    <div className="text-slate-600 truncate">{v1Data?.jabatan || 'Atasan Langsung'}</div>
+                    <div className="text-slate-500 font-mono">NIPP: {v1Data?.nip || '-'}</div>
+                  </div>
                 </div>
 
-                {/* 2. Verifikator 2 */}
-                <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-5 flex flex-col justify-between hover:border-blue-400 transition-all shadow-2xs">
+                {/* Pejabat 2: Pengelola Aset */}
+                <div className="flex flex-col justify-between p-2 bg-slate-50/60 border border-slate-300 rounded">
                   <div>
-                    {/* Header Card */}
-                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-[#0b2046] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                          2
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-tight">Verifikator 2</h4>
-                          <span className="text-[10px] text-blue-700 font-semibold block">Validasi Teknis</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-900 truncate max-w-[120px]">
-                        {v2Data?.jabatan || 'Pengelola Aset TI'}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      Memvalidasi aspek teknis, sanitasi data/media simpan, dan kelayakan degaussing.
-                    </p>
-
-                    {/* Selector */}
-                    <div className="mb-4">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                        Pilih Pejabat Verifikator 2 <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        disabled={isLockedNonDraft}
-                        value={verifikator2}
-                        onChange={(e) => setVerifikator2(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#0b2046] disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="">-- Pilih Pejabat --</option>
-                        {approvers.map((appr) => {
-                          const displayName = appr.name || appr.nama || 'Pejabat';
-                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
-                          return (
-                            <option key={appr.id} value={appr.id}>
-                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
+                    <div className="font-bold text-[11px] text-black">Pengelola Aset</div>
+                    <select
+                      value={verifikator2}
+                      onChange={(e) => setVerifikator2(e.target.value)}
+                      className="w-full mt-1.5 p-1 border border-slate-300 rounded text-[10px] bg-white text-slate-800 focus:outline-none"
+                    >
+                      <option value="">-- Pilih Pejabat --</option>
+                      {approvers.map((appr) => (
+                        <option key={appr.id} value={appr.id}>
+                          {appr.name || appr.nama}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Profile Summary Card */}
-                  {v2Data ? (
-                    <div className="bg-white p-3.5 rounded-lg border border-slate-200 flex items-center gap-3">
-                      <img 
-                        src={v2Data.avatar} 
-                        alt={v2Data.name} 
-                        className="w-10 h-10 rounded-full border border-slate-200 shrink-0" 
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-xs text-slate-900 truncate">{v2Data.name}</div>
-                        <div className="text-[11px] text-slate-500 truncate">NIP: {v2Data.nip}</div>
-                        <div className="text-[10px] font-semibold text-blue-700 mt-0.5 truncate">
-                          {v2Data.jabatan} • {v2Data.unit_kerja}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-100/70 p-3 rounded-lg border border-dashed border-slate-300 text-center text-[11px] text-slate-400">
-                      Belum ada verifikator dipilih
-                    </div>
-                  )}
+                  <div className="my-5 text-slate-400 text-xs">
+                    ( ___________________ )
+                  </div>
+                  <div className="text-[10px] leading-tight">
+                    <div className="font-bold text-black truncate">{v2Data?.name || 'Nama Pejabat'}</div>
+                    <div className="text-slate-600 truncate">{v2Data?.jabatan || 'Pengelola Aset TI'}</div>
+                    <div className="text-slate-500 font-mono">NIPP: {v2Data?.nip || '-'}</div>
+                  </div>
                 </div>
 
-                {/* 3. Verifikator 3 / Penyetuju Akhir */}
-                <div className="bg-emerald-50/40 border border-emerald-200 rounded-xl p-5 flex flex-col justify-between hover:border-emerald-400 transition-all shadow-2xs">
+                {/* Pejabat 3: VP IT Operation / Pimpinan Unit SI Daerah */}
+                <div className="flex flex-col justify-between p-2 bg-slate-50/60 border border-slate-300 rounded">
                   <div>
-                    {/* Header Card */}
-                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-emerald-200">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                          3
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-tight">Verifikator 3</h4>
-                          <span className="text-[10px] text-emerald-700 font-semibold block">Otorisasi Akhir</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800 truncate max-w-[120px]">
-                        {v3Data?.jabatan || 'Penyetuju Akhir'}
-                      </span>
+                    <div className="font-bold text-[11px] text-black leading-tight">
+                      Menyetujui / Tidak Menyetujui *,
                     </div>
-
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      Otorisasi final Berita Acara dan pengesahan tanda tangan digital terpusat.
-                    </p>
-
-                    {/* Selector */}
-                    <div className="mb-4">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                        Pilih Pejabat Penyetuju Akhir <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        disabled={isLockedNonDraft}
-                        value={verifikator3}
-                        onChange={(e) => setVerifikator3(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        <option value="">-- Pilih Pejabat --</option>
-                        {approvers.map((appr) => {
-                          const displayName = appr.name || appr.nama || 'Pejabat';
-                          const jName = (typeof appr.jabatan === 'object' ? appr.jabatan?.nama : appr.jabatan) || appr.jabatan_relasi?.nama || 'Pejabat';
-                          return (
-                            <option key={appr.id} value={appr.id}>
-                              {displayName} — {jName} ({appr.unit_kerja || 'Unit Kerja'})
-                            </option>
-                          );
-                        })}
-                      </select>
+                    <div className="text-[10px] text-slate-700 font-semibold mt-0.5">
+                      VP IT Operation / Pimpinan Unit SI
                     </div>
+                    <select
+                      value={verifikator3}
+                      onChange={(e) => setVerifikator3(e.target.value)}
+                      className="w-full mt-1.5 p-1 border border-slate-300 rounded text-[10px] bg-white text-slate-800 focus:outline-none"
+                    >
+                      <option value="">-- Pilih Pejabat --</option>
+                      {approvers.map((appr) => (
+                        <option key={appr.id} value={appr.id}>
+                          {appr.name || appr.nama}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Profile Summary Card */}
-                  {v3Data ? (
-                    <div className="bg-white p-3.5 rounded-lg border border-emerald-200 flex items-center gap-3">
-                      <img 
-                        src={v3Data.avatar} 
-                        alt={v3Data.name} 
-                        className="w-10 h-10 rounded-full border border-emerald-200 shrink-0" 
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-xs text-slate-900 truncate">{v3Data.name}</div>
-                        <div className="text-[11px] text-slate-500 truncate">NIP: {v3Data.nip}</div>
-                        <div className="text-[10px] font-semibold text-emerald-700 mt-0.5 truncate">
-                          {v3Data.jabatan} • {v3Data.unit_kerja}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-100/70 p-3 rounded-lg border border-dashed border-slate-300 text-center text-[11px] text-slate-400">
-                      Belum ada verifikator dipilih
-                    </div>
-                  )}
+                  <div className="my-5 text-slate-400 text-xs">
+                    ( ___________________ )
+                  </div>
+                  <div className="text-[10px] leading-tight">
+                    <div className="font-bold text-black truncate">{v3Data?.name || 'Nama Pejabat'}</div>
+                    <div className="text-slate-600 truncate">{v3Data?.jabatan || 'VP / Pimpinan Unit SI'}</div>
+                    <div className="text-slate-500 font-mono">NIPP: {v3Data?.nip || '-'}</div>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
-
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold text-slate-800">Prinsip Alur Sekuensial Berjenjang:</span>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Verifikator 2 hanya dapat menindaklanjuti berkas setelah Verifikator 1 menyetujui, dan Verifikator 3 setelah Verifikator 2 menyetujui. Apabila terdapat penolakan di salah satu tahap, pemohon dapat melakukan revisi melalui Formulir Revisi.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 shrink-0 bg-white px-2.5 py-1 rounded border border-slate-200">
-              <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Proteksi Sekuensial Terkunci</span>
             </div>
           </div>
-        </section>
 
-      </div>
-
-      {/* Action Bar */}
-      <div className="mt-8 bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm sticky bottom-4 z-10">
-        <div className="flex items-center gap-3 text-xs text-slate-600">
-          <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-4 h-4 text-[#f05a22]" />
+          {/* 6. TOMBOL AKSI BAWAH (Batal merah, Simpan Draf abu-abu, Perbarui hijau persis gambar) */}
+          <div className="flex flex-wrap justify-end items-center gap-3 mt-8 pt-4 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => navigate('/pemusnahan')}
+              className="px-6 py-2 bg-[#e03131] hover:bg-[#c92a2a] text-white font-bold text-xs rounded-md shadow-xs transition-colors cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting || isSavingDraft}
+              onClick={() => handleSubmit(false)}
+              className="px-5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isSavingDraft ? 'Menyimpan...' : 'Simpan Draf'}
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting || isSavingDraft}
+              onClick={() => handleSubmit(true)}
+              className="px-6 py-2 bg-[#2b8a3e] hover:bg-[#237032] text-white font-bold text-xs rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isSubmitting ? 'Memproses...' : isRevisionMode ? 'Perbarui & Kirim Ulang' : isEditMode ? 'Perbarui' : 'Kirim Permohonan'}
+            </button>
           </div>
-          <span>Dokumen ini mengikat secara hukum di bawah tata kelola aset BUMN PT Kereta Api Indonesia (Persero).</span>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <button 
-            type="button"
-            disabled={isSubmitting || isSavingDraft}
-            onClick={() => navigate('/pemusnahan')}
-            className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-lg transition-colors flex-1 md:flex-none"
-          >
-            Batal
-          </button>
-          <button 
-            type="button"
-            disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
-            onClick={() => handleSubmit(false)}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex-1 md:flex-none disabled:opacity-50"
-          >
-            {isSavingDraft ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-                <span>Menyimpan...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 text-slate-500" />
-                <span>{isRevisionMode ? 'Simpan Draf Revisi' : 'Simpan Draf'}</span>
-              </>
-            )}
-          </button>
-          <button 
-            type="button"
-            id="btn-submit-permohonan"
-            disabled={isSubmitting || isSavingDraft || isLockedNonDraft}
-            onClick={() => handleSubmit(true)}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#f05a22] hover:bg-[#d94a18] text-white text-xs font-bold rounded-lg transition-colors flex-1 md:flex-none shadow-sm shadow-[#f05a22]/30 disabled:opacity-50"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Memproses...</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                <span>
-                  {isRevisionMode
-                    ? 'Kirim Ulang Revisi Permohonan'
-                    : isEditMode
-                    ? 'Simpan & Ajukan Permohonan'
-                    : 'Kirim Permohonan'}
-                </span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
 
-      <MasterAssetPickerModal
-        isOpen={isMasterAssetModalOpen}
-        onClose={() => setIsMasterAssetModalOpen(false)}
-        onSelectAssets={(chosen) => {
-          const mapped = chosen.map((a, idx) => ({
-            id: Date.now() + idx,
-            nama: [a.product_name, a.manufacturer ? `(${a.manufacturer})` : '', a.tier_3 ? `- ${a.tier_3}` : ''].filter(Boolean).join(' ') || 'Aset TI',
-            jenis: a.jenis_aset === 'Jaringan' ? 'Jaringan (Network)' : a.jenis_aset === 'Informasi' ? 'Lisensi/Software' : 'Fisik (Hardware)',
-            sn: a.ci_id || a.serial_number || '-',
-            alasan: [a.status_ci ? `Status: ${a.status_ci}` : '', a.tier_2 ? `Kategori: ${a.tier_2}` : '', a.site ? `Lokasi: ${a.site}` : ''].filter(Boolean).join(' • ') || 'Melewati batas usia pemakaian / End of Life',
-          }));
-          setAssets((prev) => [...prev, ...mapped]);
-        }}
-      />
+        <MasterAssetPickerModal
+          isOpen={isMasterAssetModalOpen}
+          onClose={() => setIsMasterAssetModalOpen(false)}
+          onSelectAssets={(chosen) => {
+            const mapped = chosen.map((a, idx) => {
+              const t1 = String(a.tier_1 || a.tipe || a.jenis_aset || '').toLowerCase();
+              let j = 'Fisik';
+              if (t1.includes('network') || t1.includes('jaringan')) j = 'Jaringan';
+              else if (t1.includes('soft') || t1.includes('app') || t1.includes('informasi') || t1.includes('lisensi')) j = 'Informasi (SC)';
+              else if (t1.includes('hardcopy') || t1.includes('hc') || t1.includes('dokumen')) j = 'Informasi (HC)';
+
+              return {
+                id: Date.now() + idx,
+                nama: [a.product_name, a.manufacturer ? `(${a.manufacturer})` : '', a.tier_3 ? `- ${a.tier_3}` : ''].filter(Boolean).join(' ') || 'Aset TI',
+                jenis: j,
+                sn: a.ci_id || a.serial_number || '-',
+                alasan: [a.status_ci ? `Status: ${a.status_ci}` : '', a.tier_2 ? `Kategori: ${a.tier_2}` : '', a.site ? `Lokasi: ${a.site}` : ''].filter(Boolean).join(' • ') || 'Melewati batas usia pemakaian / End of Life',
+              };
+            });
+            setAssets((prev) => [...prev, ...mapped]);
+          }}
+        />
+      </div>
     </div>
   );
 }

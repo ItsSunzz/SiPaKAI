@@ -322,6 +322,17 @@ export const api = {
     })
   },
 
+  // Generator Nomor Referensi / Dokumen Otomatis dari Backend
+  async getReferenceNumber(type = 'dsp01', date = null) {
+    const params = new URLSearchParams({ type })
+    if (date) params.append('date', date)
+    return request(`/documents/reference-number?${params.toString()}`)
+  },
+
+  async getNextNumber(type = 'dsp01', date = null) {
+    return this.getReferenceNumber(type, date)
+  },
+
   // 1. Penarikan Dokumen DSP-01 (approved) ke DSP-02 & DSP-03
   async getApprovedDsp01(params = {}) {
     const cleanParams = {}
