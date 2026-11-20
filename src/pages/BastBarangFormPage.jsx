@@ -35,7 +35,7 @@ import {
 import { api } from '../services/api';
 import DocumentImportActions from '../components/DocumentImportActions';
 import MasterImportActions from '../components/MasterImportActions';
-import { normalizeMasterAsset } from '../components/MasterAssetPickerModal';
+import { normalizeMasterAsset, getStatusCiBadge } from '../components/MasterAssetPickerModal';
 // Default master pegawai list (can be extended later)
 const DEFAULT_MASTER_PEGAWAI = [];
 
@@ -2029,40 +2029,58 @@ export default function BastBarangFormPage({ user }) {
                     })
                     .map((asset) => {
                       const isChecked = selectedSapIds.includes(asset.id);
+                      const isDestroyed = asset.is_destroyed;
+                      const badge = getStatusCiBadge(asset.status_ci, isDestroyed);
+
                       return (
                         <div
                           key={asset.id}
                           onClick={() => {
+                            if (isDestroyed) return;
                             setSelectedSapIds((prev) =>
                               isChecked ? prev.filter((id) => id !== asset.id) : [...prev, asset.id]
                             );
                           }}
-                          className={`p-3 rounded-lg border cursor-pointer flex items-center justify-between transition-colors ${
-                            isChecked ? 'border-blue-500 bg-blue-50/60' : 'border-slate-200 hover:bg-slate-50'
+                          className={`p-3 rounded-lg border flex items-center justify-between transition-colors ${
+                            isDestroyed
+                              ? 'opacity-50 bg-rose-50/30 border-rose-200 cursor-not-allowed select-none'
+                              : isChecked
+                              ? 'border-blue-500 bg-blue-50/60 cursor-pointer'
+                              : 'border-slate-200 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center gap-3">
                             <input
                               type="checkbox"
                               checked={isChecked}
+                              disabled={isDestroyed}
                               onChange={() => {}}
-                              className="rounded text-blue-600"
+                              className={`rounded text-blue-600 ${isDestroyed ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                             />
                             <div>
-                              <div className="text-xs font-bold text-slate-900">
-                                {asset.product_name || '-'}
+                              <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                                <span>{asset.product_name || '-'}</span>
                                 {asset.status_ci && (
-                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                    {asset.status_ci}
+                                  <span className={`px-2 py-0.5 rounded text-[10px] border inline-flex items-center gap-1 ${badge.badgeClass}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
+                                    {badge.label}
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                Manufacturer: <span className="font-semibold text-slate-700">{asset.manufacturer || '-'}</span> • SN: <span className="font-mono">{asset.serial_number || '-'}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                {[asset.tier_1_display, asset.tier_2, asset.tier_3, asset.site].filter(Boolean).join(' • ')}
-                              </div>
+                              {isDestroyed ? (
+                                <div className="text-[10px] font-bold text-rose-600 mt-0.5">
+                                  Aset telah dimusnahkan (Destroyed) dan tidak dapat dipilih
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    Manufacturer: <span className="font-semibold text-slate-700">{asset.manufacturer || '-'}</span> • SN: <span className="font-mono">{asset.serial_number || '-'}</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">
+                                    {[asset.tier_1_display, asset.tier_2, asset.tier_3, asset.site].filter(Boolean).join(' • ')}
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
                           <span className="font-mono text-xs font-bold text-[#f05a22]">

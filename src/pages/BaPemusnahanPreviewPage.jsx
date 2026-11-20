@@ -83,8 +83,8 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
     number: 'BA-PMS/TI/DAOP1/10-2026/0014',
     type: 'dsp02',
     data: {
-      nomor_referensi: 'PMH/0001/X/2026',
-      business_area: 'DAOP 1 Jakarta',
+      nomor_referensi: '0001/01/2026',
+      business_area: 'B060',
       tanggal_pelaksanaan: '2026-10-21',
       waktu_pelaksanaan: '10:30',
       lokasi: 'Workshop TI Balai Yasa Manggarai',
@@ -137,8 +137,8 @@ export default function BaPemusnahanPreviewPage({ user, onDocumentUpdated }) {
     const payload = {
       type: 'dsp02',
       data: {
-        nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || documentData.ref_number || documentData.number || 'PMH/0001/X/2026',
-        business_area: d.business_area || documentData.wilayah || documentData.requester?.unit_kerja || 'Kantor Pusat Bandung',
+        nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || documentData.ref_number || documentData.number || '0001/01/2026',
+        business_area: d.business_area || 'B060',
         tanggal_pelaksanaan: d.tanggal_pelaksanaan || documentData.tanggal_pelaksanaan || new Date().toISOString().split('T')[0],
         waktu_pelaksanaan: d.waktu_pelaksanaan || documentData.waktu_pelaksanaan || '10:00',
         lokasi: d.lokasi || documentData.lokasi || 'Workshop TI Balai Yasa Manggarai',

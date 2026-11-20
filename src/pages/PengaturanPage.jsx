@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import MasterImportActions from '../components/MasterImportActions';
-import { normalizeMasterAsset } from '../components/MasterAssetPickerModal';
+import { normalizeMasterAsset, getStatusCiBadge } from '../components/MasterAssetPickerModal';
 
 export default function PengaturanPage({ user, onProfileUpdated }) {
   const [currentUser, setCurrentUser] = useState(user || null);
@@ -663,13 +663,17 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
                                   {asset.serial_number || '-'}
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  {asset.status_ci ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 whitespace-nowrap">
-                                      {asset.status_ci}
-                                    </span>
-                                  ) : (
-                                    '-'
-                                  )}
+                                  {(() => {
+                                    const badge = getStatusCiBadge(asset.status_ci, asset.is_destroyed);
+                                    return (
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] border whitespace-nowrap inline-flex items-center gap-1.5 ${badge.badgeClass}`}
+                                      >
+                                        <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
+                                        {badge.label}
+                                      </span>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 whitespace-nowrap">

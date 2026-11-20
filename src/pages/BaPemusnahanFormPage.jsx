@@ -98,8 +98,8 @@ export default function BaPemusnahanFormPage({ user }) {
   // 1. Informasi Berita Acara & Header (sesuai backend DocumentSchema dsp02)
   const [formData, setFormData] = useState({
     number: `BA-PMS/TI/DAOP1/${new Date().getMonth() + 1}-${new Date().getFullYear()}/00${Math.floor(10 + Math.random() * 89)}`,
-    nomor_referensi: 'PMH/0001/X/2026',
-    business_area: user?.location || 'Kantor Pusat Bandung',
+    nomor_referensi: '0001/01/2026',
+    business_area: 'B060',
     tanggal_pelaksanaan: new Date().toISOString().split('T')[0],
     waktu_pelaksanaan: '10:00',
     lokasi: 'Workshop TI Balai Yasa Manggarai',
@@ -235,8 +235,8 @@ export default function BaPemusnahanFormPage({ user }) {
 
           setFormData({
             number: docData.number || docData.nomor,
-            nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || docData.parent_document?.number || docData.ref_number || 'PMH/0001/X/2026',
-            business_area: d.business_area || d.wilayah || 'Kantor Pusat Bandung',
+            nomor_referensi: d.nomor_referensi || d.nomor_dsp01 || docData.parent_document?.number || docData.ref_number || '0001/01/2026',
+            business_area: d.business_area || 'B060',
             tanggal_pelaksanaan: d.tanggal_pelaksanaan || docData.created_at?.split('T')[0] || '',
             waktu_pelaksanaan: d.waktu_pelaksanaan || '10:00',
             lokasi: d.lokasi || 'Workshop Balai Yasa Manggarai',
@@ -289,9 +289,8 @@ export default function BaPemusnahanFormPage({ user }) {
         prev.nomor_referensi,
       business_area:
         headerData?.business_area ||
-        headerData?.unit_kerja ||
-        parentDoc?.unit_kerja ||
-        prev.business_area,
+        prev.business_area ||
+        'B060',
       lokasi:
         headerData?.lokasi ||
         headerData?.business_area ||
@@ -320,7 +319,7 @@ export default function BaPemusnahanFormPage({ user }) {
       setFormData(prev => ({
         ...prev,
         nomor_referensi: importedData.nomor_referensi || prev.nomor_referensi,
-        business_area: importedData.business_area || importedData.unit_kerja || prev.business_area,
+        business_area: importedData.business_area || prev.business_area || 'B060',
         tanggal_pelaksanaan: importedData.tanggal_pelaksanaan || prev.tanggal_pelaksanaan,
         waktu_pelaksanaan: importedData.waktu_pelaksanaan || prev.waktu_pelaksanaan,
         lokasi: importedData.lokasi || prev.lokasi,
@@ -725,7 +724,7 @@ export default function BaPemusnahanFormPage({ user }) {
             </label>
             <input
               type="text"
-              placeholder="Contoh: Kantor Pusat Bandung / DAOP 1 Jakarta"
+              placeholder="Contoh: B060 (Daop 6 Yogyakarta)"
               value={formData.business_area}
               onChange={(e) => setFormData(prev => ({ ...prev, business_area: e.target.value }))}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003580]"

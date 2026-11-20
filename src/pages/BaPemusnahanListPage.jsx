@@ -178,7 +178,7 @@ export default function BaPemusnahanListPage({ user }) {
         type: 'dsp02',
         data: {
           nomor_referensi: doc.ref_number || doc.number,
-          business_area: doc.requester_unit || 'Kantor Pusat Bandung',
+          business_area: doc.requester_unit || 'B060',
           tanggal_pelaksanaan: doc.data?.tanggal_pelaksanaan || doc.tanggal_pelaksanaan || new Date().toISOString().split('T')[0],
           waktu_pelaksanaan: doc.data?.waktu_pelaksanaan || '10:00',
           lokasi: doc.data?.lokasi || doc.requester_unit || 'Workshop TI Balai Yasa Manggarai',
