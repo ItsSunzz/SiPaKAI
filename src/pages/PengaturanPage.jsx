@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   User, 
   ShieldCheck, 
@@ -14,7 +14,11 @@ import {
   Check,
   Info,
   Database,
-  Search
+  Search,
+  Filter,
+  RotateCcw,
+  SlidersHorizontal,
+  X
 } from 'lucide-react';
 import { api } from '../services/api';
 import MasterImportActions from '../components/MasterImportActions';
@@ -47,6 +51,9 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
   const [assetsList, setAssetsList] = useState([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
   const [assetSearch, setAssetSearch] = useState('');
+  const [assetStatusFilter, setAssetStatusFilter] = useState('all');
+  const [assetTypeFilter, setAssetTypeFilter] = useState('all');
+  const [assetSiteFilter, setAssetSiteFilter] = useState('all');
 
   const isSuperAdmin = (currentUser?.role || user?.role) === 'super_admin';
 
@@ -61,6 +68,107 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
     } finally {
       setIsLoadingAssets(false);
     }
+  };
+
+  // Hitung jumlah aset per status CI untuk filter pill
+  const statusCounts = useMemo(() => {
+    const counts = {
+      all: assetsList.length,
+      deployed: 0,
+      eol: 0,
+      inventory: 0,
+      repair: 0,
+      on_loan: 0,
+      destroyed: 0,
+    };
+    assetsList.forEach((a) => {
+      const s = String(a.status_ci || '').toLowerCase().trim();
+      if (a.is_destroyed || s === 'destroyed' || s === 'dimusnahkan') {
+        counts.destroyed++;
+      } else if (s === 'deployed') {
+        counts.deployed++;
+      } else if (s === 'end of life') {
+        counts.eol++;
+      } else if (s === 'in inventory') {
+        counts.inventory++;
+      } else if (s === 'in repair') {
+        counts.repair++;
+      } else if (s === 'on loan') {
+        counts.on_loan++;
+      }
+    });
+    return counts;
+  }, [assetsList]);
+
+  // Daftar unik site/lokasi dari data yang ada
+  const uniqueSites = useMemo(() => {
+    const set = new Set();
+    assetsList.forEach((a) => {
+      if (a.site && a.site.trim()) set.add(a.site.trim());
+    });
+    return Array.from(set).sort();
+  }, [assetsList]);
+
+  // Filter aset berdasarkan pencarian teks, status CI, jenis aset, dan lokasi/site
+  const filteredAssetsList = useMemo(() => {
+    return assetsList.filter((a) => {
+      // 1. Filter status CI
+      if (assetStatusFilter !== 'all') {
+        const normFilter = assetStatusFilter.toLowerCase();
+        const normStatus = String(a.status_ci || '').toLowerCase().trim();
+        const isDestroyed = Boolean(a.is_destroyed || normStatus === 'destroyed' || normStatus === 'dimusnahkan');
+
+        if (normFilter === 'destroyed') {
+          if (!isDestroyed) return false;
+        } else {
+          if (isDestroyed || normStatus !== normFilter) return false;
+        }
+      }
+
+      // 2. Filter Jenis / Tier 1 (Fisik, Jaringan, Informasi)
+      if (assetTypeFilter !== 'all') {
+        const normType = String(a.jenis_aset || a.tipe || a.tier_1 || '').toLowerCase();
+        if (!normType.includes(assetTypeFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // 3. Filter Site / Lokasi
+      if (assetSiteFilter !== 'all') {
+        if ((a.site || '').trim() !== assetSiteFilter) return false;
+      }
+
+      // 4. Filter text search query
+      const q = assetSearch.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        (a.ci_id || '').toLowerCase().includes(q) ||
+        (a.product_name || '').toLowerCase().includes(q) ||
+        (a.manufacturer || '').toLowerCase().includes(q) ||
+        (a.serial_number || '').toLowerCase().includes(q) ||
+        (a.status_ci || '').toLowerCase().includes(q) ||
+        (a.tier_1 || '').toLowerCase().includes(q) ||
+        (a.jenis_aset || '').toLowerCase().includes(q) ||
+        (a.tier_2 || '').toLowerCase().includes(q) ||
+        (a.tier_3 || '').toLowerCase().includes(q) ||
+        (a.company || '').toLowerCase().includes(q) ||
+        (a.site || '').toLowerCase().includes(q)
+      );
+    });
+  }, [assetsList, assetSearch, assetStatusFilter, assetTypeFilter, assetSiteFilter]);
+
+  const hasActiveFilters = Boolean(
+    assetSearch.trim() ||
+    assetStatusFilter !== 'all' ||
+    assetTypeFilter !== 'all' ||
+    assetSiteFilter !== 'all'
+  );
+
+  const resetAssetFilters = () => {
+    setAssetSearch('');
+    setAssetStatusFilter('all');
+    setAssetTypeFilter('all');
+    setAssetSiteFilter('all');
   };
 
   // Load user profile & signature
@@ -568,8 +676,100 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
               </div>
 
               <div className="p-6 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="relative flex-1 min-w-[220px]">
+                {/* 1. Pill Filter Status CI */}
+                <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/80">
+                  <span className="text-[11px] font-bold text-slate-500 px-2 py-1 flex items-center gap-1">
+                    <Filter className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Status CI:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      assetStatusFilter === 'all'
+                        ? 'bg-[#0b2046] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                    }`}
+                  >
+                    Semua ({statusCounts.all})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('Deployed')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'Deployed'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-emerald-800 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>Deployed ({statusCounts.deployed})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('End of Life')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'End of Life'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-amber-800 hover:bg-amber-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    <span>End of Life ({statusCounts.eol})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('In Inventory')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'In Inventory'
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'text-sky-800 hover:bg-sky-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                    <span>In Inventory ({statusCounts.inventory})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('In Repair')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'In Repair'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'text-orange-800 hover:bg-orange-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                    <span>In Repair ({statusCounts.repair})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('On Loan')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'On Loan'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-purple-800 hover:bg-purple-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                    <span>On Loan ({statusCounts.on_loan})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetStatusFilter('Destroyed')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      assetStatusFilter === 'Destroyed'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    <span>Destroyed ({statusCounts.destroyed})</span>
+                  </button>
+                </div>
+
+                {/* 2. Filter Bar: Pencarian, Dropdown Jenis, Dropdown Lokasi/Site, dan Tombol Reset */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+                  <div className="md:col-span-5 relative">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
@@ -581,23 +781,96 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
                           loadMasterAssets(assetSearch);
                         }
                       }}
-                      placeholder="Cari kode/nomor inventaris atau nama aset..."
-                      className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#f05a22]"
+                      placeholder="Cari CI ID, nama aset, merk/tipe, SN, atau lokasi..."
+                      className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#f05a22]"
                     />
+                    {assetSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setAssetSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => loadMasterAssets(assetSearch)}
-                    disabled={isLoadingAssets}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAssets ? 'animate-spin text-[#f05a22]' : ''}`} />
-                    <span>Segarkan Aset ({assetsList.length})</span>
-                  </button>
+
+                  <div className="md:col-span-3">
+                    <select
+                      value={assetTypeFilter}
+                      onChange={(e) => setAssetTypeFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#f05a22] text-slate-700 font-medium"
+                    >
+                      <option value="all">Semua Jenis / Tier 1</option>
+                      <option value="Fisik">Fisik (Hardware)</option>
+                      <option value="Jaringan">Jaringan (Network)</option>
+                      <option value="Informasi">Informasi (Software / Lisensi)</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <select
+                      value={assetSiteFilter}
+                      onChange={(e) => setAssetSiteFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#f05a22] text-slate-700 font-medium"
+                    >
+                      <option value="all">Semua Lokasi / Site ({uniqueSites.length})</option>
+                      {uniqueSites.map((site) => (
+                        <option key={site} value={site}>
+                          {site}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-1 flex items-center gap-1.5 justify-end">
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={resetAssetFilters}
+                        title="Reset Semua Filter"
+                        className="p-2 text-slate-500 hover:text-rose-600 bg-white border border-slate-200 hover:border-rose-300 rounded-xl transition-colors"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => loadMasterAssets(assetSearch)}
+                      disabled={isLoadingAssets}
+                      title="Segarkan Data dari Server"
+                      className="p-2 text-slate-700 hover:text-[#0b2046] bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingAssets ? 'animate-spin text-[#f05a22]' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Baris Ringkasan Hasil Filter */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 px-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-700">
+                      Menampilkan <strong className="text-slate-900">{filteredAssetsList.length}</strong> dari {assetsList.length} master aset
+                    </span>
+                    {hasActiveFilters && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        Filter aktif
+                      </span>
+                    )}
+                  </div>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={resetAssetFilters}
+                      className="text-[11px] font-semibold text-[#f05a22] hover:underline"
+                    >
+                      Reset filter
+                    </button>
+                  )}
                 </div>
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="max-h-80 overflow-auto">
+                  <div className="max-h-96 overflow-auto">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider sticky top-0 z-10">
                         <tr>
@@ -606,7 +879,7 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
                           <th className="py-2.5 px-3">Product Name+ (nama)</th>
                           <th className="py-2.5 px-3">Manufacturer (merk_tipe)</th>
                           <th className="py-2.5 px-3">Serial Number (nomor_seri)</th>
-                          <th className="py-2.5 px-3">Status* (status_ci)</th>
+                          <th className="py-2.5 px-3">Status CI</th>
                           <th className="py-2.5 px-3">Tier 1 (tipe / jenis_aset)</th>
                           <th className="py-2.5 px-3">Tier 2</th>
                           <th className="py-2.5 px-3">Tier 3</th>
@@ -627,26 +900,22 @@ export default function PengaturanPage({ user, onProfileUpdated }) {
                               Belum ada data Master Aset atau tidak ditemukan. Silakan gunakan tombol <strong>Import Master Aset</strong> di atas.
                             </td>
                           </tr>
+                        ) : filteredAssetsList.length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="py-8 text-center text-slate-400 space-y-2">
+                              <div>Tidak ada data aset yang cocok dengan filter yang dipilih.</div>
+                              <button
+                                type="button"
+                                onClick={resetAssetFilters}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#f05a22] bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset Semua Filter</span>
+                              </button>
+                            </td>
+                          </tr>
                         ) : (
-                          assetsList
-                            .filter((a) => {
-                              const q = assetSearch.toLowerCase().trim();
-                              if (!q) return true;
-                              return (
-                                a.ci_id.toLowerCase().includes(q) ||
-                                a.product_name.toLowerCase().includes(q) ||
-                                a.manufacturer.toLowerCase().includes(q) ||
-                                a.serial_number.toLowerCase().includes(q) ||
-                                a.status_ci.toLowerCase().includes(q) ||
-                                a.tier_1.toLowerCase().includes(q) ||
-                                a.jenis_aset.toLowerCase().includes(q) ||
-                                a.tier_2.toLowerCase().includes(q) ||
-                                a.tier_3.toLowerCase().includes(q) ||
-                                a.company.toLowerCase().includes(q) ||
-                                a.site.toLowerCase().includes(q)
-                              );
-                            })
-                            .slice(0, 50)
+                          filteredAssetsList
                             .map((asset, idx) => (
                               <tr key={asset.id || idx} className="hover:bg-slate-50/80">
                                 <td className="py-2.5 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>

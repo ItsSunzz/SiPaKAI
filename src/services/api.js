@@ -539,8 +539,16 @@ export const api = {
 
   // Master Data Aset TI
   async getAssets(params = {}) {
-    const query = new URLSearchParams(params).toString()
-    return request(`/assets${query ? `?${query}` : ''}`)
+    let queryParams = {};
+    if (typeof params === 'string') {
+      queryParams = params ? { q: params, per_page: 500 } : { per_page: 500 };
+    } else if (params && typeof params === 'object') {
+      queryParams = { per_page: 500, ...params };
+    } else {
+      queryParams = { per_page: 500 };
+    }
+    const query = new URLSearchParams(queryParams).toString();
+    return request(`/assets${query ? `?${query}` : ''}`);
   },
 
   async getAsset(id) {

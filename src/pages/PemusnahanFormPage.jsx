@@ -30,7 +30,6 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { api } from '../services/api';
-import KaiLogo from '../components/KaiLogo';
 import DocumentImportActions from '../components/DocumentImportActions';
 import MasterAssetPickerModal, { normalizeMasterAsset, getStatusCiBadge } from '../components/MasterAssetPickerModal';
 
@@ -79,7 +78,7 @@ export default function PemusnahanFormPage({ user }) {
     { id: 2, nama: 'Cisco Catalyst 3850 48-Port PoE', jenis: 'Jaringan', sn: 'IT.045.0120.1.B060.00002', alasan: 'Port modul korsleting sambaran petir, tidak dapat direparasi' }
   ]);
   const [reference, setReference] = useState('');
-  const [businessArea, setBusinessArea] = useState('B060 - Daop 6 Yogyakarta');
+  const [businessArea, setBusinessArea] = useState('B060');
   const [docDate, setDocDate] = useState(() => {
     const d = new Date();
     return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -134,8 +133,6 @@ export default function PemusnahanFormPage({ user }) {
     if (user) {
       if (user.business_area) {
         setBusinessArea(user.business_area);
-      } else if (user.location) {
-        setBusinessArea(user.location);
       }
       if (!isEditMode) {
         if (user.name) setNamaPemohon(user.name);
@@ -152,19 +149,20 @@ export default function PemusnahanFormPage({ user }) {
     }
   }, [isEditMode]);
 
-  // Load master assets for autosuggest and extract distinct sites
+  // Load master assets for autosuggest and extract distinct sites purely from database
   useEffect(() => {
     let isMounted = true;
     const fetchMasterAssets = async () => {
       try {
         setIsLoadingMasterAssets(true);
-        const res = await api.getAssets();
+        // Mengambil seluruh aset dari database backend (per_page: 1000)
+        const res = await api.getAssets({ per_page: 1000 });
         const list = Array.isArray(res) ? res : (res?.data || []);
         const normalized = list.map(normalizeMasterAsset);
         if (isMounted) {
           setMasterAssets(normalized);
 
-          // Ekstrak Site+ unik dari database master aset Daop 6
+          // Ekstrak murni nilai kolom lokasi / site dari database master aset (tanpa dummy)
           const dbSites = Array.from(
             new Set(
               normalized
@@ -172,28 +170,12 @@ export default function PemusnahanFormPage({ user }) {
                 .filter(Boolean)
                 .map((s) => String(s).trim())
             )
-          ).filter(Boolean);
+          ).filter(Boolean).sort();
 
-          const defaultDaopSites = [
-            '9160 - Information Sys',
-            '9160 - Sta. LPN (Lempuyangan)',
-            '9160 - Sta. YK (Yogyakarta)',
-            '9160 - Sta. SLO (Solo Balapan)',
-            '9160 - Sta. KT (Klaten)',
-            '9160 - Sta. PWS (Purwosari)',
-            '9160 - Sta. WT (Wates)',
-            '9160 - Dipo Lokomotif YK',
-            'B060 - Daop 6 Yogyakarta',
-            'Unit Sistem Informasi Daop 6',
-            'Unit Sarana Daop 6',
-            'Unit Operasi Daop 6',
-          ];
-
-          const combinedSites = Array.from(new Set([...dbSites, ...defaultDaopSites])).sort();
-          setAvailableSites(combinedSites);
+          setAvailableSites(dbSites);
         }
       } catch (e) {
-        console.warn('Gagal memuat master aset untuk autosuggest:', e);
+        console.warn('Gagal memuat master aset untuk autosuggest & lokasi:', e);
       } finally {
         if (isMounted) setIsLoadingMasterAssets(false);
       }
@@ -998,9 +980,13 @@ export default function PemusnahanFormPage({ user }) {
           <div className="border border-black">
             {/* Baris 1: Logo, Instansi, dan Metadata ISO */}
             <div className="grid grid-cols-12 border-b border-black">
-              {/* Kolom 1: Logo KAI */}
+              {/* Kolom 1: Logo KAI Resmi */}
               <div className="col-span-3 border-r border-black p-3 flex items-center justify-center bg-white">
-                <KaiLogo className="h-10 sm:h-12 w-auto" />
+                <img
+                  src="/images/kai_logo.png"
+                  alt="Logo PT Kereta Api Indonesia (Persero)"
+                  className="h-10 sm:h-12 w-auto object-contain"
+                />
               </div>
               {/* Kolom 2: PT Kereta Api Indonesia (Persero) */}
               <div className="col-span-5 border-r border-black p-3 text-center flex flex-col justify-center bg-white">
@@ -1131,51 +1117,17 @@ export default function PemusnahanFormPage({ user }) {
               />
             </div>
 
-            {/* Business Area (Otomatis dari backend/profil user & Editable) */}
+            {/* Business Area (Hanya B060 tanpa dropdown & masih bisa diedit) */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="w-28 font-semibold text-black">Business Area</span>
               <span className="hidden sm:inline font-semibold">:</span>
-              <div className="flex-1 flex flex-col sm:flex-row gap-2">
-                <select
-                  value={businessArea}
-                  onChange={(e) => setBusinessArea(e.target.value)}
-                  className="flex-1 px-2 py-1 border border-slate-300 rounded focus:border-black focus:outline-none bg-white font-medium text-black text-xs"
-                >
-                  <option value="B060 - Daop 6 Yogyakarta">B060 - Daop 6 Yogyakarta</option>
-                  <option value="9160 - Information Systems (Daop 6)">9160 - Information Systems (Daop 6)</option>
-                  <option value="1000 - Kantor Pusat Bandung">1000 - Kantor Pusat Bandung</option>
-                  <option value="2000 - Daop 1 Jakarta">2000 - Daop 1 Jakarta</option>
-                  <option value="3000 - Daop 2 Bandung">3000 - Daop 2 Bandung</option>
-                  <option value="4000 - Daop 3 Cirebon">4000 - Daop 3 Cirebon</option>
-                  <option value="5000 - Daop 4 Semarang">5000 - Daop 4 Semarang</option>
-                  <option value="6000 - Daop 5 Purwokerto">6000 - Daop 5 Purwokerto</option>
-                  <option value="7000 - Daop 7 Madiun">7000 - Daop 7 Madiun</option>
-                  <option value="8000 - Daop 8 Surabaya">8000 - Daop 8 Surabaya</option>
-                  <option value="9000 - Daop 9 Jember">9000 - Daop 9 Jember</option>
-                  {businessArea && ![
-                    'B060 - Daop 6 Yogyakarta',
-                    '9160 - Information Systems (Daop 6)',
-                    '1000 - Kantor Pusat Bandung',
-                    '2000 - Daop 1 Jakarta',
-                    '3000 - Daop 2 Bandung',
-                    '4000 - Daop 3 Cirebon',
-                    '5000 - Daop 4 Semarang',
-                    '6000 - Daop 5 Purwokerto',
-                    '7000 - Daop 7 Madiun',
-                    '8000 - Daop 8 Surabaya',
-                    '9000 - Daop 9 Jember',
-                  ].includes(businessArea) && (
-                    <option value={businessArea}>{businessArea}</option>
-                  )}
-                </select>
-                <input
-                  type="text"
-                  value={businessArea}
-                  onChange={(e) => setBusinessArea(e.target.value)}
-                  placeholder="Ketik manual Business Area..."
-                  className="sm:w-60 px-2 py-1 border border-slate-300 rounded text-xs focus:border-black focus:outline-none bg-white font-medium text-black"
-                />
-              </div>
+              <input
+                type="text"
+                value={businessArea}
+                onChange={(e) => setBusinessArea(e.target.value)}
+                placeholder="Contoh: B060"
+                className="flex-1 px-2 py-0.5 border-b border-slate-300 focus:border-black focus:outline-none bg-transparent font-medium text-black"
+              />
             </div>
           </div>
 
