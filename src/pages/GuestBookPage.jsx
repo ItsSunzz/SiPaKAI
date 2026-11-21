@@ -41,6 +41,38 @@ const getList = (result) => {
   }
 }
 
+const today = () => {
+  const now = new Date()
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+const emptyDraft = () => ({
+  visit_date: today(), name: '', institution: '', purpose: '', host_name: '', phone: '',
+})
+const formatDate = (value) => {
+  if (!value) return '—'
+  const d = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+const formatTime = (value) => value ? String(value).slice(0, 5) : '—'
+const maskPhone = (value) => {
+  if (!value) return '—'
+  const phone = String(value).replace(/\s/g, '')
+  if (phone.length <= 7) return `${phone.slice(0, 2)}XXXXX`
+  return `${phone.slice(0, 3)}XXXXX${phone.slice(-2)}`
+}
+const errorText = (error) => {
+  const errors = error?.errors
+  return errors ? Object.values(errors).flat().join(' ') : error?.message || 'Terjadi kesalahan. Silakan coba lagi.'
+}
+const getList = (result) => {
+  const payload = result?.data && !Array.isArray(result.data) && result.data.data ? result.data : result
+  return {
+    rows: Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.visitors) ? payload.visitors : Array.isArray(payload) ? payload : [],
+    total: Number(payload?.total ?? 0),
+    lastPage: Math.max(1, Number(payload?.last_page ?? 1)),
+  }
+}
+
 export default function GuestBookPage({ onBackToLogin }) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(emptyDraft)
@@ -194,7 +226,7 @@ export default function GuestBookPage({ onBackToLogin }) {
 
           <div className="my-4 grid max-w-[460px] grid-cols-[130px_1fr] border border-slate-400 text-xs">
             <div className="border-b border-r border-slate-300 px-2 py-1.5">No. Ref</div><div className="border-b border-slate-300 px-2 py-1.5">: Otomatis</div>
-            <div className="border-b border-slate-300 px-2 py-1.5">Tanggal</div><div className="border-b border-slate-300 px-2 py-1.5">: {formatDate(today())}</div>
+            <div className="border-b border-r border-slate-300 px-2 py-1.5">Tanggal</div><div className="border-b border-slate-300 px-2 py-1.5">: {formatDate(today())}</div>
             <div className="border-r border-slate-300 px-2 py-1.5">Business Area</div><div className="px-2 py-1.5">: Umum</div>
           </div>
 
