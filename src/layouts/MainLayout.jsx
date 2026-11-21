@@ -9,6 +9,14 @@ export default function MainLayout({ user, onLogout }) {
   
   // Mapping paths to menu keys for the Sidebar
   const getActiveMenu = () => {
+        // Menu khusus Satpam
+    if (user?.role === 'satpam') {
+      if (location.pathname.startsWith('/satpam/dashboard')) return 'beranda';
+      if (location.pathname.startsWith('/satpam/buku-tamu')) return 'buku-tamu';
+      if (location.pathname.startsWith('/satpam/checkout-tamu')) return 'checkout-tamu';
+      if (location.pathname.startsWith('/satpam/riwayat-kunjungan')) return 'riwayat-kunjungan';
+      if (location.pathname.startsWith('/satpam/pengaturan')) return 'pengaturan';
+    }
     if (location.pathname.startsWith('/pengguna')) return 'pengguna';
     if (location.pathname.startsWith('/log-aktivitas')) return 'log-aktivitas';
     if (location.pathname.startsWith('/laporan-buku-tamu')) return 'laporan-buku-tamu';
@@ -18,12 +26,27 @@ export default function MainLayout({ user, onLogout }) {
     if (location.pathname.startsWith('/pemusnahan')) return 'dsp01';
     if (location.pathname.startsWith('/bast-barang') || location.pathname.startsWith('/bast/barang')) return 'ho01';
     if (location.pathname.startsWith('/bast-aplikasi') || location.pathname.startsWith('/bast/aplikasi')) return 'ho02';
+    if (location.pathname.startsWith('/buku-tamu')) return 'buku-tamu';
+    if (location.pathname.startsWith('/checkout-tamu')) return 'checkout-tamu';
+    if (location.pathname.startsWith('/riwayat-kunjungan')) return 'riwayat-kunjungan';
     if (location.pathname === '/') return 'beranda';
     return '';
   };
 
   const handleSelectMenu = (menu) => {
     if (menu === 'beranda') navigate('/');
+    // Navigasi khusus Satpam
+    if (user?.role === 'satpam') {
+      if (menu === 'beranda') navigate('/satpam/dashboard');
+      else if (menu === 'buku-tamu') navigate('/satpam/buku-tamu');
+      else if (menu === 'checkout-tamu') navigate('/satpam/checkout-tamu');
+      else if (menu === 'riwayat-kunjungan') navigate('/satpam/riwayat-kunjungan');
+      else if (menu === 'pengaturan') navigate('/satpam/pengaturan');
+      return;
+    }
+    else if (menu === 'buku-tamu') navigate('/buku-tamu');
+    else if (menu === 'checkout-tamu') navigate('/checkout-tamu');
+    else if (menu === 'riwayat-kunjungan') navigate('/riwayat-kunjungan');
     else if (menu === 'dsp01') navigate('/pemusnahan');
     else if (menu === 'dsp02') navigate('/berita-acara-pemusnahan');
     else if (menu === 'dsp03') navigate('/penghapusan');

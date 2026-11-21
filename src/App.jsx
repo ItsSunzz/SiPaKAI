@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
 import DashboardPage from './pages/DashboardPage'
 import RegisterPage from './pages/RegisterPage'
@@ -23,6 +23,10 @@ import BaPemusnahanPreviewPage from './pages/BaPemusnahanPreviewPage'
 import PenggunaPage from './pages/PenggunaPage'
 import LogAktivitasPage from './pages/LogAktivitasPage'
 import LaporanBukuTamuPage from './pages/LaporanBukuTamuPage'
+import SatpamDashboardPage from './pages/SatpamDashboardPage'
+import CheckoutTamuPage from './pages/CheckoutTamuPage'
+import RiwayatKunjunganPage from './pages/RiwayatKunjunganPage'
+import SatpamPengaturanPage from './pages/SatpamPengaturanPage'
 import ReviewModal from './components/ReviewModal'
 import DocumentCreateModal from './components/DocumentCreateModal'
 import DocumentDetailModal from './components/DocumentDetailModal'
@@ -36,6 +40,14 @@ const formatJabatan = (jabatan) => {
   if (typeof jabatan === 'string') return jabatan
   if (typeof jabatan === 'object') return jabatan.nama || jabatan.name || jabatan.kode || ''
   return String(jabatan)
+}
+
+function SatpamOnly({ user }) {
+  if (user?.role !== 'satpam') {
+    return <Navigate to="/" replace />
+  }
+
+  return <Outlet />
 }
 
 export default function App() {
@@ -173,7 +185,13 @@ function AppContent() {
       signature_path: user.signature_path,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=0b2046&color=fff`,
     });
-    setIsAuthenticated(true);
+    setIsAuthenticated(true)
+
+    if (user.role === 'satpam') {
+      navigate('/satpam/dashboard', { replace: true })
+    } else {
+      navigate('/dashboard', { replace: true })
+    }
   };
 
   const handleLogout = async () => {
@@ -333,17 +351,41 @@ function AppContent() {
 
       <Routes>
         <Route path="/" element={<MainLayout user={userProfile} onLogout={handleLogout} />}>
-        <Route index element={
-        <DashboardPage
-          user={userProfile}
-          documents={documents}
-          isLoading={isLoading}
-          loadDocuments={loadDocuments}
-          handleOpenModule={handleOpenModule}
-          handleReviewDocument={handleReviewDocument}
-          handleViewDocument={handleViewDocument}
-        />
-      } />
+
+        {/* ROUTE KHUSUS SATPAM */}
+        <Route path="satpam" element={<SatpamOnly user={userProfile} />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+
+          <Route
+            path="dashboard"
+            element={<SatpamDashboardPage user={userProfile} />}
+          />
+
+          <Route
+            path="buku-tamu"
+            element={<GuestBookPage onBackToLogin={() => navigate('/')} />}
+          />
+
+          <Route
+            path="checkout-tamu"
+            element={<CheckoutTamuPage />}
+          />
+
+          <Route
+            path="riwayat-kunjungan"
+            element={<RiwayatKunjunganPage />}
+          />
+
+          <Route
+            path="pengaturan"
+            element={<SatpamPengaturanPage user={userProfile} />}
+          />
+        </Route>
+
+          <Route
+            path="buku-tamu"
+            element={<GuestBookPage onBackToLogin={() => navigate('/')} />}
+          />
           <Route path="dashboard" element={
             <DashboardPage
               user={userProfile}

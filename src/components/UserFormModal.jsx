@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../services/api'
 
-export const ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', user: 'Karyawan' }
+export const ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', user: 'Karyawan', satpam: 'Satpam' }
 
 export const JABATAN_BY_ROLE = {
   super_admin: [
@@ -15,6 +15,9 @@ export const JABATAN_BY_ROLE = {
   ],
   user: [
     { value: 'Staff / Pegawai', label: 'Staff / Pegawai' },
+  ],
+  satpam: [
+    { value: 'Petugas Keamanan', label: 'Petugas Keamanan' },
   ],
 }
 

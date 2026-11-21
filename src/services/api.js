@@ -260,6 +260,13 @@ export const api = {
     })
   },
 
+  async confirmVisitorCheckout(visitorId, timeOut = null) {
+    return request(`/visitors/${visitorId}/confirm-checkout`, {
+      method: 'PATCH',
+      body: timeOut ? { time_out: timeOut } : {},
+    })
+  },
+
   async getMe() {
     return request('/auth/me')
   },
@@ -534,6 +541,27 @@ export const api = {
     return `${API_BASE_URL}/profile/signature?token=${encodeURIComponent(token)}${cb}`
   },
 
+  async getSignatureBlob() {
+    const token = getToken()
+
+    const response = await fetch(`${API_BASE_URL}/profile/signature`, {
+      method: 'GET',
+      headers: {
+        Accept: 'image/*',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+
+    if (response.status === 404) return null
+
+    if (!response.ok) {
+      throw new Error('Gagal mengambil tanda tangan tersimpan.')
+    }
+
+    return URL.createObjectURL(await response.blob())
+  },
+
+
   async verifyPin(pin) {
     return request('/profile/verify-pin', {
       method: 'POST',
@@ -546,6 +574,91 @@ export const api = {
       method: 'DELETE',
     })
   },
+
+
+  // TTD Petugas Default Bersama (Admin / Superadmin)
+
+  async getDefaultOfficerSignature() {
+    return request('/visitor-settings/default-officer-signature')
+  },
+
+  async getDefaultOfficerSignatureBlob() {
+    const token = getToken()
+
+    const response = await fetch(
+      `${API_BASE_URL}/visitor-settings/default-officer-signature/image`,
+      {
+        headers: {
+          Accept: 'image/*',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }
+    )
+
+    if (response.status === 404) return null
+
+    if (!response.ok) {
+      throw new Error('Gagal mengambil TTD petugas default.')
+    }
+
+    return URL.createObjectURL(await response.blob())
+  },
+  
+  async saveDefaultOfficerSignature(payload) {
+    const token = getToken()
+    const isFormData = payload instanceof FormData
+
+    const headers = {
+      Accept: 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+
+    // JSON wajib menggunakan Content-Type application/json
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json'
+    }
+
+    const body = isFormData
+      ? payload
+      : JSON.stringify(payload)
+
+    // Upload menggunakan POST + method spoofing.
+    if (isFormData) {
+      payload.append('_method', 'PUT')
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/visitor-settings/default-officer-signature`,
+      {
+        method: isFormData ? 'POST' : 'PUT',
+        headers,
+        body: isFormData ? payload : body,
+      }
+    )
+
+    const json = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+      const validationError = Object.values(
+        json.errors || {}
+      )[0]?.[0]
+
+      throw new Error(
+        validationError ||
+        json.message ||
+        'Gagal menyimpan TTD petugas default.'
+      )
+    }
+
+    return json
+  },
+
+  async deleteDefaultOfficerSignature() {
+    return request('/visitor-settings/default-officer-signature', {
+      method: 'DELETE',
+    })
+  },
+
 
   // Master Data Aset TI
   async getAssets(params = {}) {
@@ -595,6 +708,13 @@ export const api = {
   async getVisitorStats(params = {}) {
     const query = new URLSearchParams(params).toString()
     return request(`/visitors/stats${query ? `?${query}` : ''}`)
+  },
+
+    async createVisitorReportReference(params = {}) {
+    return request('/visitors/report-reference', {
+      method: 'POST',
+      body: params,
+    })
   },
 
   async exportVisitors(params = {}) {

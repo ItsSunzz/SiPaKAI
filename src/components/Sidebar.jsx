@@ -9,6 +9,8 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  BookOpen,
+  ClipboardCheck,
 } from 'lucide-react'
 
 const PEMUSNAHAN_ITEMS = [
@@ -84,7 +86,17 @@ export default function Sidebar({ activeMenu, onSelectMenu, onLogout, currentRol
         <div className="px-3 py-5">
           <p className="text-[9px] uppercase font-semibold text-slate-400 tracking-wider px-3 mb-3">Menu Navigasi</p>
           <nav className="space-y-1">
-            <Leaf id="beranda" icon={LayoutGrid} label="Beranda" />
+            {currentRole === 'satpam' && (
+            <>
+              <Leaf id="beranda" icon={LayoutGrid} label="Dashboard" />
+              <Leaf id="buku-tamu" icon={BookOpen} label="Buku Tamu" />
+              <Leaf id="checkout-tamu" icon={ClipboardCheck} label="Checkout Tamu" />
+              <Leaf id="riwayat-kunjungan" icon={History} label="Riwayat Kunjungan" />
+              <Leaf id="pengaturan" icon={Settings} label="Pengaturan" />
+            </>
+          )}
+            {currentRole !== 'satpam' && (
+            <>
             <Group
               icon={FileX2}
               label="Pemusnahan & Penghapusan"
@@ -101,6 +113,8 @@ export default function Sidebar({ activeMenu, onSelectMenu, onLogout, currentRol
               items={BAST_ITEMS}
               activePrefix="ho"
             />
+            </>
+            )}
             {currentRole === 'super_admin' && (
               <>
                 <Leaf id="pengguna" icon={User} label="Manajemen Pengguna" />
@@ -108,7 +122,9 @@ export default function Sidebar({ activeMenu, onSelectMenu, onLogout, currentRol
                 <Leaf id="log-aktivitas" icon={History} label="Log Aktivitas" />
               </>
             )}
-            <Leaf id="pengaturan" icon={Settings} label="Pengaturan" />
+            {currentRole !== 'satpam' && (
+              <Leaf id="pengaturan" icon={Settings} label="Pengaturan" />
+            )}
           </nav>
         </div>
       </div>
