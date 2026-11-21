@@ -146,6 +146,16 @@ export const api = {
     return request(`/visitors/search?${params.toString()}`)
   },
 
+    async getPublicDailyVisitors() {
+    return request('/visitors/daily')
+  },
+
+    async getVisitors(params = {}) {
+    const query = new URLSearchParams(params).toString()
+    return request(`/visitors${query ? `?${query}` : ''}`)
+  },
+
+
     async checkoutVisitor(visitorId, checkoutToken) {
     return request(`/visitors/${visitorId}/checkout`, {
       method: 'PATCH',
